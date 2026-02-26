@@ -17,6 +17,6 @@
 
 -- RENAME MASTER BRANCH -git branch -m production
 -- stage git - git add --all 
--- git commit -m
+-- git commit -m "message"
 -- create branch development -git branch development
 -- create branch leadtask -git branch leadtask
