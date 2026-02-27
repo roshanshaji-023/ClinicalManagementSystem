@@ -26,3 +26,6 @@ commands.txt
 # Static/media generated files (if used)
 media/
 staticfiles/
+
+# settings.py 
+backend/settings.py

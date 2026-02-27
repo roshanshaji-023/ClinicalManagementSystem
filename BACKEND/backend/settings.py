@@ -82,12 +82,12 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # }
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysqlclient',
+        'ENGINE': 'django.db.backends.mysql',
         'NAME': 'cms_backend',
         'USER': 'root',
         'PASSWORD': 'root',
         'HOST': 'localhost',
-        'PORT': '3300',
+        'PORT': 3300,
     }
 }
 
