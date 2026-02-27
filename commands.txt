@@ -18,4 +18,4 @@
 -- stage git - git add --all 
 -- git commit -m "meaningfull message"
 -- git checkout DEVELOPMENT
--- git merge leadtask
+-- git merge leadtas\
