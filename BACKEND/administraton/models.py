@@ -2,5 +2,6 @@ from django.db import models
 
 # Create your models here.
 
-class Staff:
+class Staff(models.Model):
+    
     pass
