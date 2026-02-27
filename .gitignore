@@ -1,2 +1,29 @@
-myenv/
+
 commands.txt
+
+# Virtual environment
+myenv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Django database (local only)
+db.sqlite3
+
+# Environment variables
+.env
+
+# VS Code settings
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local command notes
+commands.txt
+
+# Static/media generated files (if used)
+media/
+staticfiles/
