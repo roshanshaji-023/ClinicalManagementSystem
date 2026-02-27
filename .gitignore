@@ -27,3 +27,5 @@ commands.txt
 media/
 staticfiles/
 
+# settings.py 
+backend/settings.py
