@@ -85,15 +85,11 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-
-        # Priority 1: use environment variables (your version)
         'NAME': config('DB_NAME', default='cms_db'),
         'USER': config('DB_USER', default='root'),
         'PASSWORD': config('DB_PASSWORD', default='MySQL@123'),
         'HOST': config('DB_HOST', default='localhost'),
-
-        # Important: keep remote team’s port (3300)
-        'PORT': config('DB_PORT', default='3300'),
+        'PORT': config('DB_PORT', default='3306'),
     }
 }
 

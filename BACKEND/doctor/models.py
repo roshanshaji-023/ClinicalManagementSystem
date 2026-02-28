@@ -3,7 +3,9 @@ from administration.models import Doctor
 
 
 class DoctorAvailability(models.Model):
-
+    """
+    Class for Doctor Availability 
+    """
     class AvailabilityStatus(models.TextChoices):
         FULLDAY = "Fullday", "Fullday"
         MORNING_ONLY = "Morningonly", "Morning only"
