@@ -137,7 +137,7 @@ class Doctor(models.Model):
         return f"Dr. {self.user.username}"
     
     
-class Doctor_additionaal_info(models.Model):
+class Doctor_additional_info(models.Model):
     '''
     stores additionall info about doctor 
     '''

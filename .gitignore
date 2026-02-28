@@ -11,7 +11,7 @@ __pycache__/
 db.sqlite3
 
 # Environment variables
-.env
+backend/.env
 
 # VS Code settings
 .vscode/
