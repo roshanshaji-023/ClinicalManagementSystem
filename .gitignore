@@ -1,5 +1,4 @@
 
-commands.txt
 
 # Virtual environment
 myenv/
@@ -12,7 +11,7 @@ __pycache__/
 db.sqlite3
 
 # Environment variables
-.env
+backend/.env
 
 # VS Code settings
 .vscode/
@@ -27,3 +26,6 @@ commands.txt
 # Static/media generated files (if used)
 media/
 staticfiles/
+
+# settings.py 
+backend/settings.py
