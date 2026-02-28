@@ -90,7 +90,6 @@ class Doctor(models.Model):
     user = models.OneToOneField(User,on_delete=models.CASCADE)
     department = models.ForeignKey(Department,on_delete=models.CASCADE)
     date_of_birth = models.DateField()
-    specialization = models.CharField(max_length=150)
     qualification = models.CharField(max_length=150)
     experience_years = models.PositiveIntegerField()
     license_number = models.CharField(max_length=150,unique=True)
@@ -138,5 +137,15 @@ class Doctor(models.Model):
         return f"Dr. {self.user.username}"
     
     
+class Doctor_additionaal_info(models.Model):
+    '''
+    stores additionall info about doctor 
+    '''
+    info_id = models.AutoField(primary_key=True)
+    doctor = models.OneToOneField(Doctor,on_delete=models.CASCADE)
+    specialization = models.CharField(max_length=150)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
-
+    def __str__(self):
+        return f"Additional info for Dr. {self.doctor.user.username}"
