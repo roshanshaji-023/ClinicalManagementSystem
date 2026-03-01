@@ -6,6 +6,7 @@ Controls which fields are exposed to the API
 from django.contrib.auth.models import User, Group
 from rest_framework import serializers
 from .models import Department,Staff,Doctor,Doctor_additional_info
+import re
 
 class GroupSerializer(serializers.ModelSerializer):
     '''
@@ -21,7 +22,7 @@ class UserSerializer(serializers.ModelSerializer):
     '''
     password = serializers.CharField(write_only=True)  # hide password in API responses
     
-    # Allow assigning groups by ID during creation
+    # Allow assigning groups by ID during creation ->POST/PUT requests
     groups = serializers.PrimaryKeyRelatedField(
         queryset=Group.objects.all(),
         many=True,
@@ -41,6 +42,38 @@ class UserSerializer(serializers.ModelSerializer):
                     'group_names'    # for viewing group names
                 ]
 
+    # 🔹 Username validation
+    def validate_username(self, value):
+        if len(value) < 5:
+            raise serializers.ValidationError("Username must be at least 5 characters long.")
+        return value
+
+    # 🔹 Email validation
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Email already exists.")
+        return value
+    
+    # Password validations
+    def validate_password(self, value):
+        if len(value) < 8:
+            raise serializers.ValidationError("Password must be at least 8 characters long.")
+
+        if not re.search(r"[A-Z]", value):
+            raise serializers.ValidationError("Password must contain at least one uppercase letter.")
+
+        if not re.search(r"[0-9]", value):
+            raise serializers.ValidationError("Password must contain at least one number.")
+
+        #  Special character validation added
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", value):
+            raise serializers.ValidationError(
+                "Password must contain at least one special symbol (!@#$%^&* etc)."
+            )
+
+        return value
+    
+    
     def create(self, validated_data):
         groups = validated_data.pop('groups', [])  # extract groups before creating user
         user = User(
@@ -68,6 +101,47 @@ class DepartmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Department
         fields ='__all__'
+    
+    # ✅ Field-level validation for dept_code
+    def validate_dept_code(self, value):
+        """
+        Ensure department code:
+        - Is alphanumeric
+        - Is uppercase (optional business rule)
+        - Has minimum length of 3
+        """
+
+        if not value.isalnum():
+            raise serializers.ValidationError(
+                "Department code must be alphanumeric."
+            )
+
+        if len(value) < 3:
+            raise serializers.ValidationError(
+                "Department code must be at least 3 characters long."
+            )
+
+        return value.upper()  # Optional: auto convert to uppercase
+
+    # ✅ Field-level validation for dept_name
+    def validate_dept_name(self, value):
+        """
+        Ensure department name:
+        - Contains only letters and spaces
+        - Minimum length of 3
+        """
+
+        if len(value.strip()) < 3:
+            raise serializers.ValidationError(
+                "Department name must be at least 3 characters long."
+            )
+
+        if not re.match(r"^[A-Za-z ]+$", value):
+            raise serializers.ValidationError(
+                "Department name can contain only letters and spaces."
+            )
+
+        return value.title()  # Optional: auto format name
         
 class StaffSerializer(serializers.ModelSerializer):
     '''
