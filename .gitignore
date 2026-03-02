@@ -1,10 +1,15 @@
 # Virtual environment
 myenv/
 
+myvenv/
 # Python cache
 __pycache__/
 *.pyc
-
+*.pyo
+# backend cache
+backend\__pycache__
+# Django migrations
+migrations/
 # Django database (local only)
 db.sqlite3
 
