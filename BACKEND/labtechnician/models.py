@@ -1,4 +1,5 @@
 from django.db import models
+from reception.models import Patient
 
 # Create your models here.
 
@@ -9,4 +10,5 @@ class LabTestType(models.Model):
 
     def __str__(self):
         return self.Lab_test_name
+
 
