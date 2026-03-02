@@ -10,4 +10,5 @@ urlpatterns = [
     path('prescribe-tests/', BulkLabTestPrescriptionAPIView.as_view()),
 ]
 
-urlpatterns = router.urls
+#Add router URLs instead of replacing
+urlpatterns += router.urls
