@@ -1,9 +1,9 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
-# from BACKEND.administration.models import Doctor
-# from BACKEND.doctor.models import Doctor
-# from BACKEND.reception.models import Appointment
+from BACKEND.administration.models import Doctor
+from BACKEND.doctor.models import Doctor
+from BACKEND.reception.models import Appointment
 from administration.models import Staff
 
 
@@ -16,7 +16,7 @@ class MedicineType(models.Model):
 
 
 class MedicineInventory(models.Model):
-    medicine_id = models.AutoField(primary_key=True)
+    medicine = models.AutoField(primary_key=True)
     medicine_code = models.CharField(max_length=10, unique=True)
     company_name = models.CharField(max_length=10)
     medicine_name = models.CharField(max_length=30)
@@ -57,35 +57,35 @@ class MedicinePurchaseHistory(models.Model):
         return str(self.history_id)
 
 
-# class MedicinePrescription(models.Model):
-#     prescription_id = models.AutoField(primary_key=True)
-#     appointment = models.ForeignKey(Appointment, on_delete=models.CASCADE)
-#     medicine = models.ForeignKey(MedicineInventory, on_delete=models.CASCADE)
-#     doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE)
+class MedicinePrescription(models.Model):
+    prescription_id = models.AutoField(primary_key=True)
+    appointment = models.ForeignKey(Appointment, on_delete=models.CASCADE)
+    medicine = models.ForeignKey(MedicineInventory, on_delete=models.CASCADE)
+    doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE)
 
-#     created_at = models.DateTimeField(auto_now_add=True)
-#     updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
-#     frequency = models.IntegerField(
-#         validators=[MinValueValidator(1), MaxValueValidator(10)]
-#     )
+    frequency = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
 
-#     quantity = models.IntegerField(
-#         validators=[MinValueValidator(1)]
-#     )
+    quantity = models.IntegerField(
+        validators=[MinValueValidator(1)]
+    )
 
-#     dosage = models.CharField(max_length=50)
+    dosage = models.CharField(max_length=50)
 
-#     period = models.IntegerField(
-#         validators=[MinValueValidator(1), MaxValueValidator(365)]
-#     )
+    period = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(365)]
+    )
 
-#     def clean(self):
-#         if self.medicine and self.quantity:
-#             if self.quantity > self.medicine.total_quantity:
-#                 raise ValidationError(
-#                     "Prescribed quantity cannot be more than available stock."
-#                 )
+    def clean(self):
+        if self.medicine and self.quantity:
+            if self.quantity > self.medicine.total_quantity:
+                raise ValidationError(
+                    "Prescribed quantity cannot be more than available stock."
+                )
 
-#     def __str__(self):
-#         return str(self.prescription_id)
+    def __str__(self):
+        return str(self.prescription_id)
