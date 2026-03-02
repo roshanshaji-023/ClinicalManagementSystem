@@ -284,7 +284,7 @@ class DoctorSerializer(serializers.ModelSerializer):
         model = Doctor
         fields ='__all__'
         
-        # ====================================================
+    # ====================================================
     # FIELD LEVEL VALIDATIONS
     # ====================================================
 
