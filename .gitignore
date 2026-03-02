@@ -1,6 +1,7 @@
 # Virtual environment
 myenv/
 
+myvenv/
 # Python cache
 __pycache__/
 *.pyc
