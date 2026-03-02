@@ -7,6 +7,7 @@ from django.contrib.auth.models import User, Group
 from rest_framework import serializers
 from .models import Department,Staff,Doctor,Doctor_additional_info
 import re
+from datetime import date
 
 class GroupSerializer(serializers.ModelSerializer):
     '''
@@ -145,19 +146,230 @@ class DepartmentSerializer(serializers.ModelSerializer):
         
 class StaffSerializer(serializers.ModelSerializer):
     '''
-    Staff serializer for API representation and validation.
+    Staff serializer including:
+    - Department details
+    - User details
+    - Full validation
     '''
+
+    # ----------------------------
+    # Department (POST via ID)
+    # ----------------------------
+    department = serializers.PrimaryKeyRelatedField(
+        queryset=Department.objects.filter(status='active')
+    ) # only allow active departments to be assigned
+
+    department_name = serializers.CharField(
+        source='department.dept_name',
+        read_only=True
+    )
+
+    department_code = serializers.CharField(
+        source='department.dept_code',
+        read_only=True
+    )
+
+    # ----------------------------
+    # User Details (GET only)
+    # ----------------------------
+    first_name = serializers.CharField(
+        source='user.first_name',
+        read_only=True
+    )
+
+    last_name = serializers.CharField(
+        source='user.last_name',
+        read_only=True
+    )
+
+    email = serializers.EmailField(
+        source='user.email',
+        read_only=True
+    )
+
+    username = serializers.CharField(
+        source='user.username',
+        read_only=True
+    )
+
     class Meta:
         model = Staff
-        fields ='__all__'
+        fields = '__all__'
+
+    # ----------------------------
+    # FIELD LEVEL VALIDATION
+    # ----------------------------
+
+    def validate_phone_number(self, value):
+        if not re.fullmatch(r'\d{10,15}', value):
+            raise serializers.ValidationError(
+                "Phone number must contain 10 to 15 digits."
+            )
+        return value
+
+    def validate_department(self, value):
+        if value.status != 'active':
+            raise serializers.ValidationError(
+                "Cannot assign staff to an inactive department."
+            )
+        return value
+
+    # ----------------------------
+    # OBJECT LEVEL VALIDATION
+    # ----------------------------
+
+    def validate(self, data):
+        dob = data.get('date_of_birth')
+        today = date.today()
+
+        if dob > today:
+            raise serializers.ValidationError({
+                "date_of_birth": "Date of birth cannot be in the future."
+            })
+
+        age = today.year - dob.year - (
+            (today.month, today.day) < (dob.month, dob.day)
+        )
+
+        if age < 18:
+            raise serializers.ValidationError({
+                "date_of_birth": "Staff must be at least 18 years old."
+            })
+
+        return data
 
 class DoctorSerializer(serializers.ModelSerializer):
     '''
     Doctor serializer for API representation and validation.
     '''
+    # ----------------------------
+    # Department (POST via ID)
+    # ----------------------------
+    department = serializers.PrimaryKeyRelatedField(
+        queryset=Department.objects.filter(status='active')
+    ) # only allow active departments to be assigned
+
+    department_name = serializers.CharField(
+        source='department.dept_name',
+        read_only=True
+    )
+
+    department_code = serializers.CharField(
+        source='department.dept_code',
+        read_only=True
+    )
+    # ----------------------------
+    # User Details (GET only)
+    # ----------------------------
+    first_name = serializers.CharField(
+        source='user.first_name',
+        read_only=True
+    )
+
+    last_name = serializers.CharField(
+        source='user.last_name',
+        read_only=True
+    )
+
+    email = serializers.EmailField(
+        source='user.email',
+        read_only=True
+    )
+
+    username = serializers.CharField(
+        source='user.username',
+        read_only=True
+    )
     class Meta:
         model = Doctor
         fields ='__all__'
+        
+        # ====================================================
+    # FIELD LEVEL VALIDATIONS
+    # ====================================================
+
+    def validate_phone_number(self, value):
+        '''
+        Phone number must contain 10–15 digits only.
+        '''
+        if not re.fullmatch(r'\d{10,15}', value):
+            raise serializers.ValidationError(
+                "Phone number must contain 10 to 15 digits."
+            )
+        return value
+
+    def validate_consultation_fee(self, value):
+        '''
+        Consultation fee must be positive.
+        '''
+        if value <= 0:
+            raise serializers.ValidationError(
+                "Consultation fee must be greater than zero."
+            )
+        return value
+
+    def validate_experience_years(self, value):
+        '''
+        Experience cannot be negative.
+        '''
+        if value < 0:
+            raise serializers.ValidationError(
+                "Experience years cannot be negative."
+            )
+        return value
+
+    def validate_department(self, value):
+        '''
+        Extra safety: ensure department is active.
+        '''
+        if value.status != 'active':
+            raise serializers.ValidationError(
+                "Cannot assign doctor to inactive department."
+            )
+        return value
+
+    # ====================================================
+    # OBJECT LEVEL VALIDATION (BUSINESS LOGIC)
+    # ====================================================
+
+    def validate(self, data):
+        '''
+        Validate:
+        - DOB not future
+        - Age >= 23
+        - Experience logical check
+        '''
+
+        dob = data.get('date_of_birth')
+        experience = data.get('experience_years')
+
+        today = date.today()
+
+        # DOB cannot be future
+        if dob > today:
+            raise serializers.ValidationError({
+                "date_of_birth": "Date of birth cannot be in the future."
+            })
+
+        # Accurate age calculation
+        age = today.year - dob.year - (
+            (today.month, today.day) < (dob.month, dob.day)
+        )
+
+        # Doctor must be at least 23
+        if age < 23:
+            raise serializers.ValidationError({
+                "date_of_birth": "Doctor must be at least 23 years old."
+            })
+
+        # Experience logical check
+        if experience is not None:
+            if experience > (age - 22):
+                raise serializers.ValidationError({
+                    "experience_years": "Experience years exceed logical working age."
+                })
+
+        return data
 
 class DoctorAdditionalInfoSerializer(serializers.ModelSerializer):
     '''
