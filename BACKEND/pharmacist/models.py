@@ -1,8 +1,10 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
+
 from reception.models import Appointment
 from administration.models import Staff,Doctor
+
 
 
 class MedicineType(models.Model):

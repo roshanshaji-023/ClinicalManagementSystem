@@ -1,17 +1,20 @@
-
-
 # Virtual environment
 myenv/
 
+myvenv/
 # Python cache
 __pycache__/
 *.pyc
-
+*.pyo
+# backend cache
+backend\__pycache__
+# Django migrations
+migrations/
 # Django database (local only)
 db.sqlite3
 
 # Environment variables
-backend/.env
+.env
 
 # VS Code settings
 .vscode/
@@ -23,9 +26,6 @@ Thumbs.db
 # Local command notes
 commands.txt
 
-# Static/media generated files (if used)
+# Static/media generated files
 media/
 staticfiles/
-
-# settings.py 
-backend/settings.py
