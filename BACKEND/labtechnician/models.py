@@ -13,7 +13,7 @@ class LabTestType(models.Model):
     def __str__(self):
         return self.Lab_test_name
     
-
+#Lab-test-prescription
 class LabTestPrescription(models.Model):
     lab_hist_id = models.AutoField(primary_key=True) 
     appointment = models.ForeignKey(Appointment,on_delete=models.CASCADE,related_name='lab_tests')
@@ -43,3 +43,6 @@ class LabTestPrescription(models.Model):
 
     def __str__(self):
         return f"{self.appointment.patient} - {self.test_type.Lab_test_name} ({self.status})"
+    
+#lab-test-report
+#lab-test-bill-generation

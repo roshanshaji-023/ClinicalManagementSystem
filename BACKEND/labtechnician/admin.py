@@ -1,6 +1,8 @@
 from django.contrib import admin
+from .models import LabTestType,LabTestPrescription
 
 # Register your models here.
-from .models import LabTestType
+
 
 admin.site.register(LabTestType)
+admin.site.register(LabTestPrescription)
