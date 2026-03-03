@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import LabTestType,LabTestPrescription
+from .models import LabTestType,LabTestPrescription,LabTestReport,LabTestBill
 from reception.models import Appointment
 from administration.models import Doctor
 
@@ -81,3 +81,52 @@ class BulkLabTestPrescriptionSerializer(serializers.Serializer):
         LabTestPrescription.objects.bulk_create(prescriptions)
 
         return prescriptions
+class LabTestReportSerializer(serializers.ModelSerializer):
+
+    staff_name = serializers.CharField(
+        source='staff.user_name',
+        read_only=True
+    )
+
+    patient_name = serializers.SerializerMethodField()
+    test_name = serializers.CharField(
+        source='prescription.test_type.Lab_test_name',
+        read_only=True
+    )
+
+    class Meta:
+        model = LabTestReport
+        fields = [
+            'report_id',
+            'prescription',
+            'staff',
+            'staff_name',
+            'patient_name',
+            'test_name',
+            'report_file',
+            'generated_at'
+        ]
+
+    def get_patient_name(self, obj):
+        patient = obj.prescription.appointment.patient
+        return f"{patient.first_name} {patient.last_name}"
+
+# Lab Test Bill Serializer
+class LabTestBillSerializer(serializers.ModelSerializer):
+
+    patient_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LabTestBill
+        fields = [
+            'bill_id',
+            'appointment',
+            'patient_name',
+            'total_amount',
+            'generated_at'
+        ]
+        read_only_fields = ['total_amount']
+
+    def get_patient_name(self, obj):
+        patient = obj.appointment.patient
+        return f"{patient.first_name} {patient.last_name}"

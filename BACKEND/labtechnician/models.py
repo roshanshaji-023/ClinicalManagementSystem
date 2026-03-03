@@ -1,6 +1,6 @@
 from django.db import models
 from django.core.exceptions import ValidationError
-from administration.models import Doctor
+from administration.models import Doctor,Staff
 from reception.models import Appointment
 
 # Create your models here.
@@ -15,7 +15,7 @@ class LabTestType(models.Model):
     
 #Lab-test-prescription
 class LabTestPrescription(models.Model):
-    lab_hist_id = models.AutoField(primary_key=True) 
+    lab_hist_id = models.AutoField(primary_key=True)
     appointment = models.ForeignKey(Appointment,on_delete=models.CASCADE,related_name='lab_tests')
     doctor= models.ForeignKey(Doctor,on_delete=models.CASCADE,related_name='lab_tests')
     STATUS_CHOICES = [
@@ -45,4 +45,45 @@ class LabTestPrescription(models.Model):
         return f"{self.appointment.patient} - {self.test_type.Lab_test_name} ({self.status})"
     
 #lab-test-report
+class LabTestReport(models.Model):
+    report_id = models.AutoField(primary_key=True)
+    prescription = models.OneToOneField(LabTestPrescription,on_delete=models.CASCADE,related_name='report')
+    staff = models.ForeignKey(Staff,on_delete=models.SET_NULL,null=True,related_name='generated_reports')
+    report_file = models.FileField(upload_to='lab_reports/', blank=True, null=True)
+    generated_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        # Auto mark prescription as completed
+        self.prescription.status = 'Completed'
+        self.prescription.save()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Report - {self.prescription}"
+
 #lab-test-bill-generation
+
+# Lab Test Bill
+class LabTestBill(models.Model):
+    bill_id = models.AutoField(primary_key=True)
+    appointment = models.OneToOneField(
+        Appointment,
+        on_delete=models.CASCADE,
+        related_name='lab_bill'
+    )
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    generated_at = models.DateTimeField(auto_now_add=True)
+
+    def calculate_total(self):
+        prescriptions = LabTestPrescription.objects.filter(
+            appointment=self.appointment
+        )
+        total = sum(p.test_type.Lab_test_amount for p in prescriptions)
+        return total
+
+    def save(self, *args, **kwargs):
+        self.total_amount = self.calculate_total()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Bill - {self.appointment.patient}"
