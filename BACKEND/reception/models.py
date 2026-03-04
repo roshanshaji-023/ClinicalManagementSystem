@@ -4,10 +4,7 @@ from django.core.validators import RegexValidator
 from django.utils import timezone
 from administration.models import Staff, Doctor
 
-
-
 # Patient Model
-
 
 class Patient(models.Model):
 
@@ -267,3 +264,77 @@ class PatientHistory(models.Model):
 
     def __str__(self):
         return f"History - {self.patient} ({self.appointment.appointment_date})"
+
+
+
+class Billing(models.Model):
+
+    bill_id = models.AutoField(primary_key=True)
+
+    PAYMENT_STATUS = [
+        ('Pending', 'Pending'),
+        ('Paid', 'Paid'),
+    ]
+
+    PAYMENT_METHOD = [
+        ('Cash', 'Cash'),
+        ('Card', 'Card'),
+        ('UPI', 'UPI'),
+    ]
+
+    appointment = models.ForeignKey(
+        Appointment,
+        on_delete=models.CASCADE
+    )
+
+    patient = models.ForeignKey(
+        Patient,
+        on_delete=models.CASCADE
+    )
+
+    consultation_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2
+    )
+
+    payment_status = models.CharField(
+        max_length=20,
+        choices=PAYMENT_STATUS,
+        default='Pending'
+    )
+
+    payment_method = models.CharField(
+        max_length=20,
+        choices=PAYMENT_METHOD,
+        null=True,
+        blank=True
+    )
+
+    staff = models.ForeignKey(
+        Staff,
+        on_delete=models.SET_NULL,
+        null=True
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def clean(self):
+
+        # Consultation fee cannot be negative
+        if self.consultation_fee < 0:
+            raise ValidationError("Consultation fee cannot be negative.")
+
+        # Payment method required if payment completed
+        if self.payment_status == "Paid" and not self.payment_method:
+            raise ValidationError("Payment method must be provided if payment is completed.")
+
+        # Appointment must belong to the same patient
+        if self.appointment.patient != self.patient:
+            raise ValidationError("Appointment does not belong to this patient.")
+
+    def __str__(self):
+        return f"Bill {self.bill_id} - {self.patient}"
+    
