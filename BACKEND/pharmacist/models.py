@@ -1,11 +1,8 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
-
+from administration.models import Doctor,Staff
 from reception.models import Appointment
-from administration.models import Staff,Doctor
-
-
 
 class MedicineType(models.Model):
     medicine_Type_id = models.AutoField(primary_key=True)
@@ -16,7 +13,7 @@ class MedicineType(models.Model):
 
 
 class MedicineInventory(models.Model):
-    medicine = models.AutoField(primary_key=True)
+    medicine_id = models.AutoField(primary_key=True)
     medicine_code = models.CharField(max_length=10, unique=True)
     company_name = models.CharField(max_length=10)
     medicine_name = models.CharField(max_length=30)
@@ -41,7 +38,7 @@ class MedicineInventory(models.Model):
 
 class MedicinePurchaseHistory(models.Model):
     history_id = models.AutoField(primary_key=True)
-    medicine = models.ForeignKey(MedicineInventory, on_delete=models.CASCADE)
+    medicine_id = models.ForeignKey(MedicineInventory, on_delete=models.CASCADE)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
