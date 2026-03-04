@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+
     'authentication',
     'administration',
     'doctor',
@@ -80,12 +81,7 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     }
-# }
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
@@ -96,6 +92,7 @@ DATABASES = {
         'PORT': config('DB_PORT'),
     }
 }
+
 
 
 # Password validation
@@ -133,3 +130,16 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+               'rest_framework.authentication.TokenAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES':(
+                'rest_framework.permissions.AllowAny',
+    ),
+
+
+# }
