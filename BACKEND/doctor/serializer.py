@@ -5,7 +5,7 @@ from django.utils import timezone
 from administration.models import Doctor, Staff
 from reception.models import Appointment, Patient, PatientHistory
 from pharmacist.models import MedicineInventory, MedicinePrescription
-from labtechnician.models import LabTest, LabTestPrescription
+from labtechnician.models import LabTestPrescription
 from .models import DoctorAvailability
 
 
@@ -52,7 +52,7 @@ class DoctorAvailSerializer(serializers.ModelSerializer):
         doctor = data.get("doctor")
         date = data.get("available_date")
 
-        if DoctorAvailability.objects.filter(doctor=doctor, available_date=date).exists():
+        if DoctorAvailability.objects.filter(doctor=doctor,available_date=date).exclude(pk=self.instance.pk if self.instance else None).exists():
             raise serializers.ValidationError(
                 f"Availability for this doctor on {date} already exists."
             )
@@ -161,7 +161,101 @@ class AppointmentSerializer(serializers.ModelSerializer):
         """
         return f"{obj.patient.first_name} {obj.patient.last_name}"
 
+# =====================================================================
+#                   LAB TEST PRESCRIPTION SERIALIZER
+# =====================================================================
 
+class LabTestPrescriptionSerializer(serializers.ModelSerializer):
+    """
+    Serializer used by doctors to prescribe laboratory tests.
+
+    Performs:
+    - field-level validation
+    - object-level validation ensuring doctor owns the appointment
+    - prevents duplicate test prescriptions for the same appointment
+    """
+
+    class Meta:
+        model = LabTestPrescription
+        fields = "__all__"
+
+    def validate(self, data):
+        """
+        Object level validation.
+
+        Ensures:
+        1. The doctor creating the test owns the appointment.
+        2. Duplicate test types are not prescribed for the same appointment.
+        """
+
+        appointment = data["appointment"]
+        doctor = data["doctor"]
+        test_type = data["test_type"]
+
+        # Check appointment belongs to the doctor
+        if appointment.doctor_id != doctor.doctor_id:
+            raise serializers.ValidationError(
+                "Doctor cannot prescribe tests for another doctor's appointment."
+            )
+
+        # Prevent duplicate lab tests for same appointment
+        if LabTestPrescription.objects.filter(
+            appointment=appointment,
+            test_type=test_type
+        ).exists():
+            raise serializers.ValidationError(
+                "This test has already been prescribed for this appointment."
+            )
+
+        return data
+    
+# =====================================================================
+#                   LAB TEST PRESCRIPTION SERIALIZER
+# =====================================================================
+
+class LabTestPrescriptionSerializer(serializers.ModelSerializer):
+    """
+    Serializer used by doctors to prescribe laboratory tests.
+
+    Performs:
+    - field-level validation
+    - object-level validation ensuring doctor owns the appointment
+    - prevents duplicate test prescriptions for the same appointment
+    """
+
+    class Meta:
+        model = LabTestPrescription
+        fields = "__all__"
+
+    def validate(self, data):
+        """
+        Object level validation.
+
+        Ensures:
+        1. The doctor creating the test owns the appointment.
+        2. Duplicate test types are not prescribed for the same appointment.
+        """
+
+        appointment = data["appointment"]
+        doctor = data["doctor"]
+        test_type = data["test_type"]
+
+        # Check appointment belongs to the doctor
+        if appointment.doctor_id != doctor.doctor_id:
+            raise serializers.ValidationError(
+                "Doctor cannot prescribe tests for another doctor's appointment."
+            )
+
+        # Prevent duplicate lab tests for same appointment
+        if LabTestPrescription.objects.filter(
+            appointment=appointment,
+            test_type=test_type
+        ).exists():
+            raise serializers.ValidationError(
+                "This test has already been prescribed for this appointment."
+            )
+
+        return data
 
 # =====================================================================
 #                CONSULTATION NOTE SERIALIZER
