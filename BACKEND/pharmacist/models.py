@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from administration.models import Doctor, Staff
 from reception.models import Appointment
 
-
+# models file
 class MedicineType(models.Model):
     medicine_type_id = models.AutoField(primary_key=True)
     medicine_type_name = models.CharField(max_length=30)
