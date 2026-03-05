@@ -22,5 +22,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/admin/', include('administration.urls')),  # Include administration app URLs
     path('api/lab/',include ('labtechnician.urls')),
+    path('api/doctor/', include('doctor.urls')),
 
 ]
