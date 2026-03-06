@@ -13,13 +13,15 @@ from .models import Department, Staff, Doctor, Doctor_additional_info
 from authentication.permissions import IsAdmin
 
 class UserViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAdmin]
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [IsAdmin]
+    
 class GroupViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAdmin]
     queryset = Group.objects.all()
     serializer_class = GroupSerializer
-    permission_classes = [IsAdmin]
+    
 
 class DepartmentViewSet(viewsets.ModelViewSet):
     '''
@@ -27,10 +29,11 @@ class DepartmentViewSet(viewsets.ModelViewSet):
         This ensures that only active departments are shown in the API responses, 
         while still allowing us to keep inactive departments in the database for historical reference and potential reactivation in the future.
     '''
+    permission_classes = [IsAdmin]
     def get_queryset(self):
         return Department.objects.filter(status='active')
     serializer_class = DepartmentSerializer
-    permission_classes = [IsAdmin]
+    
     '''
     override destroy method to implement soft delete by setting status to inactive instead of deleting the record from database.
     This allows us to keep historical data and avoid issues with foreign key constraints in related models.

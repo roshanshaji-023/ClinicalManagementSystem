@@ -7,10 +7,11 @@ class IsAdmin(BasePermission):
     """
 
     def has_permission(self, request, view):
+       
         return (
             request.user and
             request.user.is_authenticated and
-            request.user.groups.filter(name="Admin").exists()
+            request.user.groups.filter(name="admin").exists()
         )
 
 
@@ -23,7 +24,7 @@ class IsDoctor(BasePermission):
         return (
             request.user and
             request.user.is_authenticated and
-            request.user.groups.filter(name="Doctor").exists()
+            request.user.groups.filter(name="doctor").exists()
         )
 
 
@@ -36,7 +37,7 @@ class IsLabTechnician(BasePermission):
         return (
             request.user and
             request.user.is_authenticated and
-            request.user.groups.filter(name="LabTechnician").exists()
+            request.user.groups.filter(name="labtechnician").exists()
         )
 
 

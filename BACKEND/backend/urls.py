@@ -22,5 +22,5 @@ urlpatterns = [
     path('api/auth/', include('authentication.urls')),  # Include authentication app URLs
     path('api/admin/', include('administration.urls')),  # Include administration app URLs
     path('api/lab/',include ('labtechnician.urls')),
-
+    
 ]
