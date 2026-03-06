@@ -10,14 +10,18 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from .serializer import UserSerializer, GroupSerializer, DepartmentSerializer, StaffSerializer, DoctorSerializer ,DoctorAdditionalInfoSerializer
 from .models import Department, Staff, Doctor, Doctor_additional_info
+from authentication.permissions import IsAdmin
 
 class UserViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAdmin]
     queryset = User.objects.all()
     serializer_class = UserSerializer
-
+    
 class GroupViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAdmin]
     queryset = Group.objects.all()
     serializer_class = GroupSerializer
+    
 
 class DepartmentViewSet(viewsets.ModelViewSet):
     '''
@@ -25,9 +29,11 @@ class DepartmentViewSet(viewsets.ModelViewSet):
         This ensures that only active departments are shown in the API responses, 
         while still allowing us to keep inactive departments in the database for historical reference and potential reactivation in the future.
     '''
+    permission_classes = [IsAdmin]
     def get_queryset(self):
         return Department.objects.filter(status='active')
     serializer_class = DepartmentSerializer
+    
     '''
     override destroy method to implement soft delete by setting status to inactive instead of deleting the record from database.
     This allows us to keep historical data and avoid issues with foreign key constraints in related models.
@@ -44,7 +50,7 @@ class DepartmentViewSet(viewsets.ModelViewSet):
     
 class StaffViewSet(viewsets.ModelViewSet):
     serializer_class = StaffSerializer
-
+    permission_classes = [IsAdmin]
     # Only return active staff members
     def get_queryset(self):
         return Staff.objects.filter(status='active')
@@ -61,7 +67,7 @@ class StaffViewSet(viewsets.ModelViewSet):
 
 class DoctorViewSet(viewsets.ModelViewSet):
     serializer_class = DoctorSerializer
-
+    permission_classes = [IsAdmin]
     # Only return active doctors
     def get_queryset(self):
         return Doctor.objects.filter(status='active')
@@ -79,3 +85,4 @@ class DoctorViewSet(viewsets.ModelViewSet):
 class DoctorAdditionalInfoViewSet(viewsets.ModelViewSet):
     queryset = Doctor_additional_info.objects.all()
     serializer_class = DoctorAdditionalInfoSerializer
+    permission_classes = [IsAdmin]
