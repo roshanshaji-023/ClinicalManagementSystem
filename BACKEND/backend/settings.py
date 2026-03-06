@@ -39,7 +39,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-
     'authentication',
     'administration',
     'doctor',
@@ -140,4 +139,6 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES':(
                 'rest_framework.permissions.AllowAny',
     ),
+
+
  }
