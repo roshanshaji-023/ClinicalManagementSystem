@@ -45,7 +45,7 @@ INSTALLED_APPS = [
     'doctor',
     'labtechnician',
     'pharmacist',
-    'reception',
+    'reception.apps.ReceptionConfig',
 ]
 
 MIDDLEWARE = [

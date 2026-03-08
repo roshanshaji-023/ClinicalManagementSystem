@@ -56,7 +56,8 @@ class Patient(models.Model):
     staff = models.ForeignKey(
         Staff,
         on_delete=models.SET_NULL,
-        null=True
+        null=True,
+        blank=True
     )
 
     created_date = models.DateTimeField(auto_now_add=True)
@@ -69,11 +70,15 @@ class Patient(models.Model):
             raise ValidationError("Date of birth cannot be in the future.")
 
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
+        self.full_clean()
 
-        if not self.patient_code:
+        if not self.pk:
+            super().save(*args, **kwargs)
             self.patient_code = f"PAT{self.patient_id:04d}"
-        super().save(update_fields=['patient_code'])
+            super().save(update_fields=['patient_code'])
+        else:
+            super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
@@ -138,7 +143,8 @@ class Appointment(models.Model):
     staff = models.ForeignKey(
         Staff,
         on_delete=models.SET_NULL,
-        null=True
+        null=True,
+        blank=True
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -155,7 +161,7 @@ class Appointment(models.Model):
     def clean(self):
 
         # Prevent past appointments
-        if self.appointment_date < timezone.now().date():
+        if self.appointment_date and self.appointment_date < timezone.localdate():
             raise ValidationError("Appointment date cannot be in the past.")
 
         # Follow-up must have parent
@@ -170,6 +176,21 @@ class Appointment(models.Model):
         if self.parent_appointment and self.parent_appointment.patient != self.patient:
             raise ValidationError("Parent appointment must belong to the same patient.")
 
+        # Prevent double booking for the same doctor
+        existing = Appointment.objects.filter(
+            doctor=self.doctor,
+            appointment_date=self.appointment_date,
+            appointment_time=self.appointment_time
+        ).exclude(pk=self.pk)
+
+        if existing.exists():
+            raise ValidationError("Doctor already has an appointment at this time.")
+
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.patient} - {self.appointment_date}"
 
@@ -180,6 +201,7 @@ class Appointment(models.Model):
 
 class WaitingToken(models.Model):
 
+
     token_id = models.AutoField(primary_key=True)
 
     appointment = models.ForeignKey(
@@ -188,9 +210,17 @@ class WaitingToken(models.Model):
         related_name='tokens'
     )
 
-    token_number = models.IntegerField(blank=True, null=True)
+    doctor = models.ForeignKey(
+        Doctor,
+        on_delete=models.CASCADE,
+        editable=False
+    )
 
-    token_date = models.DateField(default=timezone.now)
+    token_number = models.IntegerField(blank=True, null=True)
+     
+    MAX_TOKEN_PER_DAY = 60
+
+    token_date = models.DateField(default=timezone.localdate)
 
     issued_time = models.DateTimeField(auto_now_add=True)
 
@@ -198,8 +228,8 @@ class WaitingToken(models.Model):
         ordering = ['token_number']
         constraints = [
             models.UniqueConstraint(
-                fields=['token_number', 'token_date'],
-                name='unique_token_per_day'
+                fields=['doctor', 'token_number', 'token_date'],
+                name='unique_token_per_doctor_per_day'
             )
         ]
 
@@ -209,10 +239,24 @@ class WaitingToken(models.Model):
 
     def save(self, *args, **kwargs):
 
-        # Auto-generate token number if not provided
+        today = timezone.localdate()
+
+        self.doctor = self.appointment.doctor
+
+        # Check daily token limit
+        today_token_count = WaitingToken.objects.filter(
+            doctor=self.doctor,
+            token_date=today
+        ).count()
+
+        if today_token_count >= self.MAX_TOKEN_PER_DAY:
+            raise ValidationError("Maximum token limit reached for this doctor today.")
+
+        # Auto-generate token number
         if not self.token_number:
-            last_token = WaitingToken.objects.filter(
-                token_date=timezone.now().date()
+            last_token = WaitingToken.objects.select_related('doctor','appointment').filter(
+                doctor=self.doctor,
+                token_date=today
             ).order_by('token_number').last()
 
             if last_token:
@@ -245,7 +289,7 @@ class PatientHistory(models.Model):
         related_name='history'
     )
 
-    consultation_note = models.TextField()
+    consultation_note = models.TextField(blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -254,6 +298,10 @@ class PatientHistory(models.Model):
 
     def clean(self):
 
+
+        if not self.appointment:
+             raise ValidationError("Appointment is required for patient history.")
+
         # Ensure appointment belongs to patient
         if self.appointment.patient != self.patient:
             raise ValidationError("Appointment does not belong to this patient.")
@@ -261,6 +309,12 @@ class PatientHistory(models.Model):
         # History only after completion
         if self.appointment.status != 'Completed':
             raise ValidationError("History can only be created after appointment completion.")
+        
+        
+        
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"History - {self.patient} ({self.appointment.appointment_date})"
@@ -282,9 +336,10 @@ class Billing(models.Model):
         ('UPI', 'UPI'),
     ]
 
-    appointment = models.ForeignKey(
+    appointment = models.OneToOneField(
         Appointment,
-        on_delete=models.CASCADE
+        on_delete=models.CASCADE,
+        related_name='consultation_bill'
     )
 
     patient = models.ForeignKey(
@@ -324,8 +379,8 @@ class Billing(models.Model):
     def clean(self):
 
         # Consultation fee cannot be negative
-        if self.consultation_fee < 0:
-            raise ValidationError("Consultation fee cannot be negative.")
+        if self.consultation_fee <= 0:
+            raise ValidationError("Consultation fee must be greater than zero.")
 
         # Payment method required if payment completed
         if self.payment_status == "Paid" and not self.payment_method:
@@ -334,6 +389,13 @@ class Billing(models.Model):
         # Appointment must belong to the same patient
         if self.appointment.patient != self.patient:
             raise ValidationError("Appointment does not belong to this patient.")
+        
+        if self.payment_status == "Pending" and self.payment_method:
+            raise ValidationError("Payment method should only be provided after payment.")
+        
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Bill {self.bill_id} - {self.patient}"

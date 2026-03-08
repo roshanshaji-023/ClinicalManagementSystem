@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from django.utils import timezone
 from .models import Patient, Appointment, WaitingToken, PatientHistory, Billing
-from labtechnician.models import LabTestBill
 # from pharmacist.models import PharmacyBill
 
 
@@ -11,7 +10,7 @@ class PatientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Patient
         fields = '__all__'
-        read_only_fields = ['patient_id', 'patient_code', 'created_date']
+        read_only_fields = ['patient_id', 'patient_code', 'created_date' , 'staff']
 
     
         
@@ -32,10 +31,21 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
 
-        appointment_date = data.get('appointment_date')
-        visit_type = data.get('visit_type')
-        parent_appointment = data.get('parent_appointment')
-        status = data.get('status')
+        appointment_date = data.get('appointment_date',getattr(self.instance, 'appointment_date', None))
+        visit_type = data.get(
+            'visit_type',
+            getattr(self.instance, 'visit_type', None)
+       )
+
+        parent_appointment = data.get(
+             'parent_appointment',
+            getattr(self.instance, 'parent_appointment', None)
+        )
+
+        status = data.get(
+             'status',
+             getattr(self.instance, 'status', None)
+        )
 
         # Prevent past appointment
         if appointment_date and appointment_date < timezone.now().date():
@@ -49,12 +59,15 @@ class AppointmentSerializer(serializers.ModelSerializer):
                 "Follow-up appointment must have parent appointment"
             )
 
-        # Appointment workflow validation (NEW)
-        if status == "Completed" and visit_type == "New":
+        # Appointment workflow validation 
+        if (
+            status == "Completed"
+            and visit_type == "New"
+            and getattr(self.instance, 'status', None) != "In Consultation"
+        ):
             raise serializers.ValidationError(
                 "New appointment cannot be marked completed immediately."
-            )
-
+           )
         return data
     
 class WaitingTokenSerializer(serializers.ModelSerializer):
@@ -62,7 +75,7 @@ class WaitingTokenSerializer(serializers.ModelSerializer):
     class Meta:
         model = WaitingToken
         fields = '__all__'
-        read_only_fields = ['token_id','token_number', 'issued_time']
+        read_only_fields = ['token_id','token_number','doctor', 'issued_time']
 
 class PatientHistorySerializer(serializers.ModelSerializer):
 
@@ -81,19 +94,17 @@ class BillingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Billing
         fields = '__all__'
-        read_only_fields = ['bill_id','created_at']
+        read_only_fields = ['bill_id', 'created_at', 'patient' , 'staff']
 
     def get_total_bill(self, obj):
 
-        consultation = obj.consultation_fee
+        consultation = obj.consultation_fee or 0
 
-        # lab bill
         lab_total = 0
         lab_bill = getattr(obj.appointment, 'lab_bill', None)
         if lab_bill:
             lab_total = lab_bill.total_amount
 
-        # pharmacy bill (future integration)
         pharmacy_total = 0
 
         return consultation + lab_total + pharmacy_total
@@ -106,19 +117,36 @@ class BillingSerializer(serializers.ModelSerializer):
             )
 
         return value
-    
+
     def validate(self, data):
 
         appointment = data.get('appointment')
         patient = data.get('patient')
 
         if appointment and patient and appointment.patient != patient:
-             raise serializers.ValidationError(
+            raise serializers.ValidationError(
                 "Appointment does not belong to this patient."
             )
 
         return data
-    
+
+    #  CUSTOM CREATE
+    def create(self, validated_data):
+
+        appointment = validated_data.get('appointment')
+
+        validated_data['patient'] = appointment.patient
+
+        return super().create(validated_data)
+
+    #  CUSTOM UPDATE
+    def update(self, instance, validated_data):
+
+        appointment = validated_data.get('appointment', instance.appointment)
+
+        validated_data['patient'] = appointment.patient
+
+        return super().update(instance, validated_data)
 class AppointmentNestedSerializer(serializers.ModelSerializer):
 
     class Meta:

@@ -1,6 +1,6 @@
 from rest_framework import viewsets
 from rest_framework.filters import SearchFilter
-from django.db import transaction
+from administration.models import Staff
 
 from .models import Patient, Appointment, WaitingToken, PatientHistory, Billing
 from .serializers import (
@@ -18,25 +18,38 @@ class PatientViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ['first_name', 'phone_number']
 
+    # Automatically assign staff
+    def perform_create(self, serializer):
+        staff = Staff.objects.get(user=self.request.user)
+        serializer.save(staff=staff)
+
 
 class AppointmentViewSet(viewsets.ModelViewSet):
     queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
 
-    @transaction.atomic
+    # Automatically assign staff
     def perform_create(self, serializer):
-        appointment = serializer.save()
-        WaitingToken.objects.create(appointment=appointment)
+        staff = Staff.objects.get(user=self.request.user)
+        serializer.save(staff=staff)
 
 
 class WaitingTokenViewSet(viewsets.ModelViewSet):
-    queryset = WaitingToken.objects.all().order_by('token_number')
+    queryset = WaitingToken.objects.select_related(
+        'appointment', 'doctor'
+    ).order_by('token_number')
     serializer_class = WaitingTokenSerializer
 
 
 class PatientHistoryViewSet(viewsets.ModelViewSet):
-    queryset = PatientHistory.objects.all().order_by('-created_at')
+    queryset = PatientHistory.objects.select_related(
+        'patient', 'appointment'
+    ).order_by('-created_at')
     serializer_class = PatientHistorySerializer
+
+    
+
+
 
 
 class BillingViewSet(viewsets.ModelViewSet):
@@ -45,4 +58,10 @@ class BillingViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         appointment = serializer.validated_data['appointment']
-        serializer.save(patient=appointment.patient)
+        staff = Staff.objects.get(user=self.request.user)
+
+        serializer.save(
+            patient=appointment.patient,
+            staff=staff
+        )
+
