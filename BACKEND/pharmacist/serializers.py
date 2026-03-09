@@ -1,6 +1,4 @@
 from rest_framework import serializers
-from django.db import transaction
-
 from .models import (
     MedicineType,
     MedicineInventory,
@@ -9,130 +7,148 @@ from .models import (
     MedicineBill
 )
 
-from administration.models import Doctor, Staff
-from reception.models import Appointment
-
-
 class MedicineTypeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MedicineType
         fields = "__all__"
+        read_only_fields = ["medicine_type_id"]
 
-    def validate_medicine_Type_name(self, value):
-        if len(value) < 2:
+    def validate_medicine_type_name(self, value):
+        if len(value) < 3:
             raise serializers.ValidationError(
-                "Medicine type name must be at least 2 characters."
+                "Medicine type name must be at least 3 characters long."
             )
         return value
 
 
 class MedicineInventorySerializer(serializers.ModelSerializer):
 
-    medicine_Type_id = serializers.PrimaryKeyRelatedField(
-        queryset=MedicineType.objects.all()
-    )
-
-    medicine_Type_name = serializers.CharField(
-        source="medicine_Type_id.medicine_Type_name",
-        read_only=True
-    )
-
     class Meta:
         model = MedicineInventory
-        fields = [
-            "medicine_id",
-            "medicine_code",
-            "company_name",
-            "medicine_name",
-            "medicine_Type_id",
-            "medicine_Type_name",
-            "price_per_unit",
-            "total_quantity",
-            "created_at",
-            "updated_at"
-        ]
+        fields = "__all__"
+        read_only_fields = ["medicine_id", "created_at", "updated_at"]
 
-        read_only_fields = ("created_at", "updated_at")
-
-    def validate_medicine_code(self, value):
+    def validate_medicine_name(self, value):
         if len(value) < 3:
             raise serializers.ValidationError(
-                "Medicine code must be at least 3 characters."
+                "Medicine name must contain at least 3 characters."
             )
         return value
 
-    def validate_total_quantity(self, value):
-        if value < 0:
+    def validate_price_per_unit(self, value):
+        if value <= 0:
             raise serializers.ValidationError(
-                "Total quantity cannot be negative."
+                "Price must be greater than 0."
             )
         return value
+
+
 
 
 class MedicinePurchaseHistorySerializer(serializers.ModelSerializer):
 
-    medicine_id = serializers.PrimaryKeyRelatedField(
-        queryset=MedicineInventory.objects.all()
-    )
-
-    medicine_name = serializers.CharField(
-        source="medicine_id.medicine_name",
-        read_only=True
-    )
-
-    staff_id = serializers.PrimaryKeyRelatedField(
-        queryset=Staff.objects.all()
+    medicine_name = serializers.ReadOnlyField(
+        source="medicine.medicine_name"
     )
 
     class Meta:
         model = MedicinePurchaseHistory
-        fields = [
-            "history_id",
-            "medicine_id",
-            "medicine_name",
-            "quantity",
-            "purchase_date",
-            "staff_id",
-            "created_at",
-            "updated_at"
-        ]
+        fields = "__all__"
+        read_only_fields = ["history_id", "created_at", "updated_at"]
 
-        read_only_fields = ("history_id", "created_at", "updated_at")
-
-    def validate_quantity(self, value):
-        if value <= 0:
-            raise serializers.ValidationError(
-                "Purchase quantity must be greater than zero."
-            )
-        return value
-
-    @transaction.atomic
     def create(self, validated_data):
 
-        medicine = validated_data["medicine_id"]
-        quantity = validated_data["quantity"]
+        purchase = MedicinePurchaseHistory.objects.create(**validated_data)
 
-        # Increase stock
-        medicine.total_quantity += quantity
+        medicine = purchase.medicine
+        medicine.total_quantity += purchase.quantity
         medicine.save()
 
-        return MedicinePurchaseHistory.objects.create(**validated_data)
+        return purchase
 
 
 class MedicinePrescriptionSerializer(serializers.ModelSerializer):
 
-    appointment = serializers.PrimaryKeyRelatedField(
-        queryset=Appointment.objects.all()
+    medicine_name = serializers.ReadOnlyField(
+        source="medicine.medicine_name"
+    )
+
+    doctor_name = serializers.ReadOnlyField(
+        source="doctor.name"
     )
 
     class Meta:
         model = MedicinePrescription
         fields = "__all__"
+        read_only_fields = ["prescription_id", "created_at", "updated_at"]
+
+    def validate(self, data):
+
+        medicine = data.get("medicine")
+        quantity = data.get("quantity")
+
+        if medicine and quantity:
+            if quantity > medicine.total_quantity:
+                raise serializers.ValidationError(
+                    "Prescribed quantity cannot exceed available stock."
+                )
+
+        return data
+
+    def create(self, validated_data):
+
+        prescription = MedicinePrescription.objects.create(**validated_data)
+
+        medicine = prescription.medicine
+        medicine.total_quantity -= prescription.quantity
+        medicine.save()
+
+        return prescription
+
+
+class PrescriptionNestedSerializer(serializers.ModelSerializer):
+
+    medicine_name = serializers.ReadOnlyField(
+        source="medicine.medicine_name"
+    )
+
+    class Meta:
+        model = MedicinePrescription
+        fields = ["prescription_id", "medicine", "medicine_name", "quantity", "dosage"]
 
 
 class MedicineBillSerializer(serializers.ModelSerializer):
 
+    prescriptions = PrescriptionNestedSerializer(many=True)
+
     class Meta:
         model = MedicineBill
         fields = "__all__"
+        read_only_fields = ["bill_id", "billing_date"]
+
+    def validate(self, data):
+
+        total = data.get("total_amount")
+        paid = data.get("paid_amount")
+
+        if paid > total:
+            raise serializers.ValidationError(
+                "Paid amount cannot exceed total amount."
+            )
+
+        return data
+
+    def create(self, validated_data):
+
+        prescriptions_data = validated_data.pop("prescriptions")
+
+        bill = MedicineBill.objects.create(**validated_data)
+
+        for prescription_data in prescriptions_data:
+            prescription = MedicinePrescription.objects.get(
+                prescription_id=prescription_data["prescription_id"]
+            )
+            bill.prescriptions.add(prescription)
+
+        return bill
