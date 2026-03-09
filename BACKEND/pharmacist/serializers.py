@@ -1,154 +1,67 @@
-from rest_framework import serializers
-from .models import (
-    MedicineType,
-    MedicineInventory,
-    MedicinePurchaseHistory,
-    MedicinePrescription,
-    MedicineBill
-)
-
-class MedicineTypeSerializer(serializers.ModelSerializer):
-
-    class Meta:
-        model = MedicineType
-        fields = "__all__"
-        read_only_fields = ["medicine_type_id"]
-
-    def validate_medicine_type_name(self, value):
-        if len(value) < 3:
-            raise serializers.ValidationError(
-                "Medicine type name must be at least 3 characters long."
-            )
-        return value
+from rest_framework.decorators import api_view
+from rest_framework import viewsets
+from rest_framework import status
+from rest_framework.response import Response
+from .models import MedicineType
+from .models import MedicineInventory
+from .models import MedicinePurchaseHistory
+from .models import MedicinePrescription
+from .models import MedicineBill
+from .serializers import MedicineTypeSerializer
+from .serializers import MedicineInventorySerializer
+from .serializers import MedicinePurchaseHistorySerializer
+from .serializers import MedicinePrescriptionSerializer
+from .serializers import MedicineBillSerializer
+class MedicineTypeViewSet(viewsets.ModelViewSet):
+    queryset = MedicineType.objects.all()
+    serializer_class = MedicineTypeSerializer
 
 
-class MedicineInventorySerializer(serializers.ModelSerializer):
-
-    class Meta:
-        model = MedicineInventory
-        fields = "__all__"
-        read_only_fields = ["medicine_id", "created_at", "updated_at"]
-
-    def validate_medicine_name(self, value):
-        if len(value) < 3:
-            raise serializers.ValidationError(
-                "Medicine name must contain at least 3 characters."
-            )
-        return value
-
-    def validate_price_per_unit(self, value):
-        if value <= 0:
-            raise serializers.ValidationError(
-                "Price must be greater than 0."
-            )
-        return value
+class MedicineInventoryViewSet(viewsets.ModelViewSet):
+    queryset = MedicineInventory.objects.all()
+    serializer_class = MedicineInventorySerializer
 
 
+class MedicinePurchaseHistoryViewSet(viewsets.ModelViewSet):
+    queryset = MedicinePurchaseHistory.objects.all()
+    serializer_class = MedicinePurchaseHistorySerializer
 
 
-class MedicinePurchaseHistorySerializer(serializers.ModelSerializer):
+@api_view(['GET','POST'])
+def prescription_list_create(request):
+    try:
+        if request.method == 'GET':
+           prescriptions = MedicinePrescription.objects.all().order_by("-created_at")
+           serializer = MedicinePrescriptionSerializer(prescriptions,many=True)
+           return Response(serializer.data)
 
-    medicine_name = serializers.ReadOnlyField(
-        source="medicine.medicine_name"
-    )
-
-    class Meta:
-        model = MedicinePurchaseHistory
-        fields = "__all__"
-        read_only_fields = ["history_id", "created_at", "updated_at"]
-
-    def create(self, validated_data):
-
-        purchase = MedicinePurchaseHistory.objects.create(**validated_data)
-
-        medicine = purchase.medicine
-        medicine.total_quantity += purchase.quantity
-        medicine.save()
-
-        return purchase
-
-
-class MedicinePrescriptionSerializer(serializers.ModelSerializer):
-
-    medicine_name = serializers.ReadOnlyField(
-        source="medicine.medicine_name"
-    )
-
-    doctor_name = serializers.ReadOnlyField(
-        source="doctor.name"
-    )
-
-    class Meta:
-        model = MedicinePrescription
-        fields = "__all__"
-        read_only_fields = ["prescription_id", "created_at", "updated_at"]
-
-    def validate(self, data):
-
-        medicine = data.get("medicine")
-        quantity = data.get("quantity")
-
-        if medicine and quantity:
-            if quantity > medicine.total_quantity:
-                raise serializers.ValidationError(
-                    "Prescribed quantity cannot exceed available stock."
-                )
-
-        return data
-
-    def create(self, validated_data):
-
-        prescription = MedicinePrescription.objects.create(**validated_data)
-
-        medicine = prescription.medicine
-        medicine.total_quantity -= prescription.quantity
-        medicine.save()
-
-        return prescription
-
-
-class PrescriptionNestedSerializer(serializers.ModelSerializer):
-
-    medicine_name = serializers.ReadOnlyField(
-        source="medicine.medicine_name"
-    )
-
-    class Meta:
-        model = MedicinePrescription
-        fields = ["prescription_id", "medicine", "medicine_name", "quantity", "dosage"]
-
-
-class MedicineBillSerializer(serializers.ModelSerializer):
-
-    prescriptions = PrescriptionNestedSerializer(many=True)
-
-    class Meta:
-        model = MedicineBill
-        fields = "__all__"
-        read_only_fields = ["bill_id", "billing_date"]
-
-    def validate(self, data):
-
-        total = data.get("total_amount")
-        paid = data.get("paid_amount")
-
-        if paid > total:
-            raise serializers.ValidationError(
-                "Paid amount cannot exceed total amount."
-            )
-
-        return data
-
-    def create(self, validated_data):
-
-        prescriptions_data = validated_data.pop("prescriptions")
-
-        bill = MedicineBill.objects.create(**validated_data)
-
-        for prescription_data in prescriptions_data:
-            prescription = MedicinePrescription.objects.get(
-                prescription_id=prescription_data["prescription_id"]
-            )
-            bill.prescriptions.add(prescription)
-
-        return bill
+        if request.method == 'POST':
+           serializer = MedicinePrescriptionSerializer(data=request.data)
+           if serializer.is_valid():
+              serializer.save()
+              return Response(serializer.data,status=status.HTTP_201_CREATED)
+           return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
+    
+    except Exception as e:
+        return Response(
+            {"error":str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+@api_view(['GET','POST'])
+def bill_list_create(request):
+    try:
+        if request.method =='GET':
+            bill = MedicineBill.objects.all().order_by("-created_at")
+            serializer = MedicineBillSerializer(bill,many=True)
+            return Response(serializer.data)
+        if request.method =='POST':
+            serializer = MedicineBillSerializer(data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data,status=status.HTTP_201_CREATED)
+            return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response(
+            {"error":str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
