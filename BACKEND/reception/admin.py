@@ -65,6 +65,7 @@ class BillingAdmin(admin.ModelAdmin):
         'consultation_fee',
         'payment_status',
         'staff',
+        'paid_at',
         'created_at'
     ]
     list_filter = ['payment_status']

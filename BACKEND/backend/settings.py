@@ -44,8 +44,7 @@ INSTALLED_APPS = [
     'doctor',
     'labtechnician',
     'pharmacist',
-    'reception.apps.ReceptionConfig',
-    # 'reception',
+     'reception',
     'corsheaders'
 ]
 
@@ -121,11 +120,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kolkata'   # ✅ changed
 
 USE_I18N = True
 
-USE_TZ = True
+USE_TZ = True   # ✅ keep this as it is
 
 
 # Static files (CSS, JavaScript, Images)

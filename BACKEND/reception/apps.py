@@ -7,4 +7,3 @@ class ReceptionConfig(AppConfig):
 
     def ready(self):
         import reception.signals
-
