@@ -29,3 +29,6 @@ commands.txt
 # Static/media generated files
 media/
 staticfiles/
+
+__pycache__/
+*.pyc

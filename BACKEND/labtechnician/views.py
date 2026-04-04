@@ -6,6 +6,7 @@ from rest_framework import status
 from reception.models import Appointment
 from .models import LabTestType,LabTestPrescription,LabTestReport,LabTestBill
 from .serializer import LabTestTypeSerializer,LabTestPrescriptionSerializer,BulkLabTestPrescriptionSerializer,LabTestReportSerializer,LabTestBillSerializer
+from authentication.permissions import IsLabTechnician
 
 # Create your views here.
 
@@ -20,9 +21,11 @@ class LabTestTypeViewSet(viewsets.ModelViewSet):
     """
     queryset = LabTestType.objects.all()
     serializer_class = LabTestTypeSerializer
+    # permission_classes=[IsLabTechnician]
 
 #List & Retrieve
 class LabTestPrescriptionAPIView(APIView):
+    # permission_classes=[IsLabTechnician]
 
     def get(self, request):
         prescriptions = LabTestPrescription.objects.select_related(
@@ -37,6 +40,7 @@ class LabTestPrescriptionAPIView(APIView):
 
 #Bulk Create
 class BulkLabTestPrescriptionAPIView(APIView):
+    # permission_classes=[IsLabTechnician]
 
     def post(self, request):
         serializer = BulkLabTestPrescriptionSerializer(data=request.data)
@@ -52,6 +56,7 @@ class BulkLabTestPrescriptionAPIView(APIView):
 
 # Create & View Lab Reports
 class LabTestReportAPIView(APIView):
+    # permission_classes=[IsLabTechnician]
 
     def get(self, request):
         reports = LabTestReport.objects.select_related(
@@ -72,6 +77,7 @@ class LabTestReportAPIView(APIView):
 
 # Generate Lab Bill
 class LabTestBillAPIView(APIView):
+    # permission_classes=[IsLabTechnician]
 
     def post(self, request):
         appointment_id = request.data.get("appointment")
