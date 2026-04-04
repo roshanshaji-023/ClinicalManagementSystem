@@ -152,6 +152,17 @@ class StaffSerializer(serializers.ModelSerializer):
     - Full validation
     '''
 
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    
+    # ----------------------------
+    # USER INPUT (WRITE ONLY) ✅ IMPORTANT
+    # ----------------------------
+    username = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True)
+    email = serializers.EmailField(write_only=True)
+    first_name = serializers.CharField(write_only=True)
+    last_name = serializers.CharField(write_only=True)
+    
     # ----------------------------
     # Department (POST via ID)
     # ----------------------------
@@ -169,32 +180,124 @@ class StaffSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+     # ----------------------------
+    # ROLE (VERY IMPORTANT)
     # ----------------------------
-    # User Details (GET only)
+    role = serializers.CharField(write_only=True)
+    role_name = serializers.SerializerMethodField(read_only=True)
+
     # ----------------------------
-    first_name = serializers.CharField(
-        source='user.first_name',
+    # USER DETAILS (READ)
+    # ----------------------------
+    user_username = serializers.CharField(
+        source='user.username',
         read_only=True
     )
 
-    last_name = serializers.CharField(
-        source='user.last_name',
-        read_only=True
-    )
-
-    email = serializers.EmailField(
+    user_email = serializers.EmailField(
         source='user.email',
         read_only=True
     )
 
-    username = serializers.CharField(
-        source='user.username',
+    user_first_name = serializers.CharField(
+        source='user.first_name',
+        read_only=True
+    )
+
+    user_last_name = serializers.CharField(
+        source='user.last_name',
         read_only=True
     )
 
     class Meta:
         model = Staff
-        fields = '__all__'
+        fields = '__all__' 
+        extra_kwargs = {
+    'user': {'required': False}
+}
+    # ----------------------------
+    # CREATE (CORE LOGIC)
+    # ----------------------------
+    def create(self, validated_data):
+        role_name = validated_data.pop('role')
+
+        username = validated_data.pop('username')
+        password = validated_data.pop('password')
+        first_name = validated_data.pop('first_name')
+        last_name = validated_data.pop('last_name')
+        email = validated_data.pop('email')
+
+        # Create user
+        user = User.objects.create(
+            username=username,
+            email=email,
+            first_name=first_name,
+            last_name=last_name
+        )
+        user.set_password(password)
+        user.save()
+
+        # Assign role (GROUP)
+        try:
+            group = Group.objects.get(name=role_name)
+        except Group.DoesNotExist:
+            raise serializers.ValidationError({"role": "Invalid role"})
+
+        user.groups.add(group)
+
+        # Create staff
+        staff = Staff.objects.create(user=user, **validated_data)
+
+        return staff
+
+    # ----------------------------
+    # RETURN ROLE
+    # ----------------------------
+    def get_role_name(self, obj):
+        group = obj.user.groups.first()
+        return group.name if group else None
+    
+    def update(self, instance, validated_data):
+    # ----------------------------
+    # HANDLE USER UPDATE
+    # ----------------------------
+        user = instance.user
+
+        user.username = validated_data.get('username', user.username)
+        user.email = validated_data.get('email', user.email)
+        user.first_name = validated_data.get('first_name', user.first_name)
+        user.last_name = validated_data.get('last_name', user.last_name)
+
+        password = validated_data.get('password', None)
+        if password:
+            user.set_password(password)
+
+        user.save()
+
+        # ----------------------------
+        # HANDLE ROLE UPDATE
+        # ----------------------------
+        role_name = validated_data.get('role', None)
+        if role_name:
+            try:
+                group = Group.objects.get(name=role_name)
+                user.groups.clear()
+                user.groups.add(group)
+            except Group.DoesNotExist:
+                raise serializers.ValidationError({"role": "Invalid role"})
+
+        # ----------------------------
+        # UPDATE STAFF FIELDS
+        # ----------------------------
+        instance.department = validated_data.get('department', instance.department)
+        instance.phone_number = validated_data.get('phone_number', instance.phone_number)
+        instance.date_of_birth = validated_data.get('date_of_birth', instance.date_of_birth)
+        instance.blood_group = validated_data.get('blood_group', instance.blood_group)
+        instance.status = validated_data.get('status', instance.status)
+
+        instance.save()
+
+        return instance
 
     # ----------------------------
     # FIELD LEVEL VALIDATION
