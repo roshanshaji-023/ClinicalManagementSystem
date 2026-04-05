@@ -33,17 +33,17 @@ def create_token(sender, instance, created, **kwargs):
     Generate token ONLY when patient arrives (status = Waiting)
     """
 
-    # ✅ Only when status is Waiting
+    # Only when status is Waiting
     if instance.status != "Waiting":
         return
 
-    # ✅ Only for today
+    # Only for today
     if instance.appointment_date != timezone.localdate():
         return
 
-    # ✅ Prevent duplicate token
+    # Prevent duplicate token
     if WaitingToken.objects.filter(appointment=instance).exists():
         return
 
-    # ✅ Create token
+    # Create token
     WaitingToken.objects.create(appointment=instance)

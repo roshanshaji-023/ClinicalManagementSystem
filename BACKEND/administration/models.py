@@ -79,7 +79,7 @@ class Staff(models.Model):
         super().save(*args, **kwargs)
     
     def __str__(self):
-        return f"{self.user.username} - Staff"
+        return f"{self.user.first_name} {self.user.last_name}"
 
 class Doctor(models.Model):
     '''

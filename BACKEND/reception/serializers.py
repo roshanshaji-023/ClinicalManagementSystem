@@ -1,6 +1,5 @@
 from rest_framework import serializers
 from django.utils import timezone
- 
 
 from .models import (
     Patient,
@@ -15,7 +14,6 @@ from .models import (
 
 class PatientSerializer(serializers.ModelSerializer):
 
-    #  Readable fields for frontend/demo
     full_name = serializers.SerializerMethodField(read_only=True)
     age = serializers.ReadOnlyField()
 
@@ -26,8 +24,6 @@ class PatientSerializer(serializers.ModelSerializer):
 
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}"
-
-    #  Field validations
 
     def validate_first_name(self, value):
         if not value.isalpha():
@@ -49,13 +45,15 @@ class PatientSerializer(serializers.ModelSerializer):
         return value
 
 
-# -------------------- APPOINTMENT --------------------
+# -------------------- APPOINTMENT (FINAL VERSION) --------------------
 
 class AppointmentSerializer(serializers.ModelSerializer):
 
-    #  Readable fields
     patient_name = serializers.CharField(source='patient.first_name', read_only=True)
     doctor_name = serializers.SerializerMethodField(read_only=True)
+
+    follow_ups = serializers.SerializerMethodField(read_only=True)
+    history = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Appointment
@@ -64,6 +62,36 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
     def get_doctor_name(self, obj):
         return f"{obj.doctor.user.first_name} {obj.doctor.user.last_name}"
+
+    def get_follow_ups(self, obj):
+        if obj.visit_type != "New":
+            return []
+
+        followups = obj.follow_ups.all().order_by('appointment_date')
+
+        return [
+            {
+                "appointment_id": f.appointment_id,
+                "date": f.appointment_date.strftime("%d-%m-%Y"),
+                "time": str(f.appointment_time),
+                "status": f.status
+            }
+            for f in followups
+        ]
+
+    def get_history(self, obj):
+        history = PatientHistory.objects.filter(
+            appointment=obj
+        ).order_by('-created_at')
+
+        return [
+            {
+                "appointment_id": h.appointment.appointment_id,
+                "note": h.consultation_note,
+                "date": h.created_at.strftime("%d-%m-%Y %I:%M %p")
+            }
+            for h in history
+        ]
 
     def validate(self, data):
 
@@ -76,28 +104,22 @@ class AppointmentSerializer(serializers.ModelSerializer):
         status = data.get('status')
         cancellation_reason = data.get('cancellation_reason')
 
-        # Date validation
         if appointment_date and appointment_date < timezone.localdate():
             raise serializers.ValidationError("Appointment date cannot be in the past")
 
-        # Time validation
         if appointment_date == timezone.localdate():
             if appointment_time and appointment_time < timezone.localtime().time():
                 raise serializers.ValidationError("Appointment time cannot be in the past")
 
-        # Follow-up validation
         if visit_type == 'Follow-Up' and not parent:
             raise serializers.ValidationError("Follow-up requires parent appointment")
 
-        # Same patient validation
         if parent and parent.patient != patient:
             raise serializers.ValidationError("Parent appointment must belong to same patient")
 
-        # Cancellation validation
         if status == 'Cancelled' and not cancellation_reason:
             raise serializers.ValidationError("Cancellation reason required")
 
-        # Double booking prevention
         if doctor and appointment_date and appointment_time:
             exists = Appointment.objects.filter(
                 doctor=doctor,
@@ -115,7 +137,6 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
 class WaitingTokenSerializer(serializers.ModelSerializer):
 
-    # Readable fields
     patient_name = serializers.CharField(source='appointment.patient.first_name', read_only=True)
     doctor_name = serializers.SerializerMethodField(read_only=True)
     is_emergency = serializers.BooleanField(source='appointment.is_emergency', read_only=True)
@@ -138,7 +159,6 @@ class WaitingTokenSerializer(serializers.ModelSerializer):
 
 class PatientHistorySerializer(serializers.ModelSerializer):
 
-    #  Readable fields
     patient_name = serializers.CharField(source='patient.first_name', read_only=True)
     appointment_date = serializers.DateField(source='appointment.appointment_date', read_only=True)
 
@@ -178,16 +198,13 @@ class BillingSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
 
-        appointment = data.get('appointment')
         consultation_fee = data.get('consultation_fee')
         payment_status = data.get('payment_status')
         payment_method = data.get('payment_method')
 
-        #  Safe validation
         if consultation_fee is not None and consultation_fee <= 0:
             raise serializers.ValidationError("Consultation fee must be positive")
 
-        #  Payment validation
         if payment_status == "Paid" and not payment_method:
             raise serializers.ValidationError("Payment method required if paid")
 
@@ -200,13 +217,3 @@ class BillingSerializer(serializers.ModelSerializer):
         appointment = validated_data.get('appointment')
         validated_data['patient'] = appointment.patient
         return super().create(validated_data)
-    
-
-
- 
-
-
-class BillingSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Billing
-        fields = '__all__'
