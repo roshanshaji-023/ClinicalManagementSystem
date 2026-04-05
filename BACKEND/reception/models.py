@@ -2,9 +2,12 @@ from django.db import models
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.utils import timezone
+from django.contrib.auth.models import User
 from administration.models import Staff, Doctor
+from decimal import Decimal
 
-# Patient Model
+
+# -------------------- PATIENT --------------------
 
 class Patient(models.Model):
 
@@ -15,19 +18,6 @@ class Patient(models.Model):
         unique=True,
         editable=False
     )
-
-    GENDER_CHOICES = [
-        ('Male', 'Male'),
-        ('Female', 'Female'),
-        ('Other', 'Other'),
-    ]
-
-    BLOOD_GROUP_CHOICES = [
-        ('A+', 'A+'), ('A-', 'A-'),
-        ('B+', 'B+'), ('B-', 'B-'),
-        ('O+', 'O+'), ('O-', 'O-'),
-        ('AB+', 'AB+'), ('AB-', 'AB-'),
-    ]
 
     phone_validator = RegexValidator(
         regex=r'^\d{10}$',
@@ -40,13 +30,13 @@ class Patient(models.Model):
         validators=[phone_validator]
     )
 
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
+    first_name = models.CharField(max_length=50)
+    last_name = models.CharField(max_length=50)
 
     date_of_birth = models.DateField()
 
-    gender = models.CharField(max_length=10, choices=GENDER_CHOICES)
-    blood_group = models.CharField(max_length=5, choices=BLOOD_GROUP_CHOICES)
+    gender = models.CharField(max_length=10)
+    blood_group = models.CharField(max_length=5)
 
     email_id = models.EmailField(blank=True, null=True)
     address = models.TextField()
@@ -56,7 +46,15 @@ class Patient(models.Model):
     staff = models.ForeignKey(
         Staff,
         on_delete=models.SET_NULL,
-        null=True
+        null=True,
+        blank=True
+    )
+
+    created_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL
     )
 
     created_date = models.DateTimeField(auto_now_add=True)
@@ -68,19 +66,42 @@ class Patient(models.Model):
         if self.date_of_birth > timezone.now().date():
             raise ValidationError("Date of birth cannot be in the future.")
 
+        #  NEW: Name validation
+        if not self.first_name.isalpha():
+            raise ValidationError("First name must contain only letters")
+
+        if not self.last_name.isalpha():
+            raise ValidationError("Last name must contain only letters")
+        
+        if len(self.first_name) < 2:
+            raise ValidationError("First name must be at least 2 characters")
+
+        if len(self.last_name) < 2:
+            raise ValidationError("Last name must be at least 2 characters")
+
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
+        self.full_clean()
 
-        if not self.patient_code:
+        if not self.pk:
+            super().save(*args, **kwargs)
             self.patient_code = f"PAT{self.patient_id:04d}"
-        super().save(update_fields=['patient_code'])
+            super().save(update_fields=['patient_code'])
+        else:
+            super().save(*args, **kwargs)
+
+    #  NEW: Age property (for realism)
+    @property
+    def age(self):
+        today = timezone.now().date()
+        return today.year - self.date_of_birth.year - (
+            (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day)
+        )
+
     def __str__(self):
-        return f"{self.first_name} {self.last_name}"
+        return f"{self.patient_code} - {self.first_name}"
 
 
-
-# Appointment Model
-
+# -------------------- APPOINTMENT --------------------
 
 class Appointment(models.Model):
 
@@ -100,17 +121,8 @@ class Appointment(models.Model):
         ('Follow-Up', 'Follow-Up'),
     ]
 
-    patient = models.ForeignKey(
-        Patient,
-        on_delete=models.CASCADE,
-        related_name='appointments'
-    )
-
-    doctor = models.ForeignKey(
-        Doctor,
-        on_delete=models.CASCADE,
-        related_name='appointments'
-    )
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='appointments')
+    doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE, related_name='appointments')
 
     appointment_date = models.DateField()
     appointment_time = models.TimeField()
@@ -125,21 +137,15 @@ class Appointment(models.Model):
         related_name='follow_ups'
     )
 
-    status = models.CharField(
-        max_length=30,
-        choices=STATUS_CHOICES,
-        default='Scheduled'
-    )
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='Scheduled')
 
     is_emergency = models.BooleanField(default=False)
 
     cancellation_reason = models.TextField(null=True, blank=True)
 
-    staff = models.ForeignKey(
-        Staff,
-        on_delete=models.SET_NULL,
-        null=True
-    )
+    staff = models.ForeignKey(Staff, on_delete=models.SET_NULL, null=True, blank=True)
+
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -154,29 +160,32 @@ class Appointment(models.Model):
 
     def clean(self):
 
-        # Prevent past appointments
-        if self.appointment_date < timezone.now().date():
+        if self.appointment_date and self.appointment_date < timezone.localdate():
             raise ValidationError("Appointment date cannot be in the past.")
 
-        # Follow-up must have parent
+        #  NEW: Time validation
+        if self.appointment_date == timezone.localdate():
+            if self.appointment_time < timezone.localtime().time():
+                raise ValidationError("Appointment time cannot be in the past")
+
         if self.visit_type == 'Follow-Up' and not self.parent_appointment:
             raise ValidationError("Follow-Up appointment must have a parent appointment.")
 
-        # Cancellation must have reason
         if self.status == 'Cancelled' and not self.cancellation_reason:
             raise ValidationError("Cancellation reason is required.")
 
-        # Parent appointment must belong to same patient
         if self.parent_appointment and self.parent_appointment.patient != self.patient:
             raise ValidationError("Parent appointment must belong to the same patient.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.patient} - {self.appointment_date}"
 
 
-
-# Waiting Token Model
-
+# -------------------- WAITING TOKEN --------------------
 
 class WaitingToken(models.Model):
 
@@ -188,9 +197,15 @@ class WaitingToken(models.Model):
         related_name='tokens'
     )
 
-    token_number = models.IntegerField(blank=True, null=True)
+    doctor = models.ForeignKey(
+        Doctor,
+        on_delete=models.CASCADE,
+        editable=False
+    )
 
-    token_date = models.DateField(default=timezone.now)
+    token_number = models.PositiveIntegerField(blank=True, null=True)
+
+    token_date = models.DateField(default=timezone.localdate)
 
     issued_time = models.DateTimeField(auto_now_add=True)
 
@@ -198,46 +213,51 @@ class WaitingToken(models.Model):
         ordering = ['token_number']
         constraints = [
             models.UniqueConstraint(
-                fields=['token_number', 'token_date'],
-                name='unique_token_per_day'
+                fields=['doctor', 'token_number', 'token_date'],
+                name='unique_token_per_doctor_per_day'
             )
         ]
 
     def clean(self):
-        if self.token_number is not None and self.token_number <= 0:
-            raise ValidationError("Token number must be positive.")
+        if not self.appointment:
+            raise ValidationError("Appointment is required")
 
     def save(self, *args, **kwargs):
 
-        # Auto-generate token number if not provided
+        self.full_clean()  # ✅ IMPORTANT
+
+        self.doctor = self.appointment.doctor
+
+        today_token_count = WaitingToken.objects.filter(
+            doctor=self.doctor,
+            token_date=self.token_date
+        ).count()
+
+        # ✅ FIXED: dynamic token limit
+        if today_token_count >= self.doctor.max_tokens_per_day:
+            raise ValidationError("Maximum token limit reached for this doctor today.")
+
         if not self.token_number:
             last_token = WaitingToken.objects.filter(
-                token_date=timezone.now().date()
+                doctor=self.doctor,
+                token_date=self.token_date
             ).order_by('token_number').last()
 
-            if last_token:
-                self.token_number = last_token.token_number + 1
-            else:
-                self.token_number = 1
+            self.token_number = last_token.token_number + 1 if last_token else 1
 
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Token {self.token_number} - {self.token_date}"
+        return f"Token {self.token_number}"
 
 
-
-# Patient History Model
-
+# -------------------- PATIENT HISTORY --------------------
 
 class PatientHistory(models.Model):
 
     history_id = models.AutoField(primary_key=True)
 
-    patient = models.ForeignKey(
-        Patient,
-        on_delete=models.CASCADE
-    )
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE)
 
     appointment = models.OneToOneField(
         Appointment,
@@ -245,7 +265,7 @@ class PatientHistory(models.Model):
         related_name='history'
     )
 
-    consultation_note = models.TextField()
+    consultation_note = models.TextField(blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -254,18 +274,20 @@ class PatientHistory(models.Model):
 
     def clean(self):
 
-        # Ensure appointment belongs to patient
         if self.appointment.patient != self.patient:
             raise ValidationError("Appointment does not belong to this patient.")
 
-        # History only after completion
         if self.appointment.status != 'Completed':
-            raise ValidationError("History can only be created after appointment completion.")
+            raise ValidationError("History can only be created after completion.")
 
-    def __str__(self):
-        return f"History - {self.patient} ({self.appointment.appointment_date})"
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
+
+
+# -------------------- BILLING --------------------
 
 class Billing(models.Model):
 
@@ -282,26 +304,24 @@ class Billing(models.Model):
         ('UPI', 'UPI'),
     ]
 
-    appointment = models.ForeignKey(
+    appointment = models.OneToOneField(
         Appointment,
-        on_delete=models.CASCADE
+        on_delete=models.CASCADE,
+        related_name='bill'
     )
 
-    patient = models.ForeignKey(
-        Patient,
-        on_delete=models.CASCADE
-    )
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE)
 
-    consultation_fee = models.DecimalField(
-        max_digits=10,
-        decimal_places=2
-    )
+    consultation_fee = models.DecimalField(max_digits=10, decimal_places=2)
 
-    payment_status = models.CharField(
-        max_length=20,
-        choices=PAYMENT_STATUS,
-        default='Pending'
-    )
+    # ✅ NEW FIELDS (ONLY ADD THESE)
+    lab_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    pharmacy_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS, default='Pending')
 
     payment_method = models.CharField(
         max_length=20,
@@ -310,11 +330,9 @@ class Billing(models.Model):
         blank=True
     )
 
-    staff = models.ForeignKey(
-        Staff,
-        on_delete=models.SET_NULL,
-        null=True
-    )
+    staff = models.ForeignKey(Staff, on_delete=models.SET_NULL, null=True)
+
+    paid_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -323,18 +341,42 @@ class Billing(models.Model):
 
     def clean(self):
 
-        # Consultation fee cannot be negative
-        if self.consultation_fee < 0:
-            raise ValidationError("Consultation fee cannot be negative.")
+        # ✅ Existing validations (keep)
+        if self.consultation_fee <= 0:
+            raise ValidationError("Consultation fee must be greater than zero.")
 
-        # Payment method required if payment completed
         if self.payment_status == "Paid" and not self.payment_method:
-            raise ValidationError("Payment method must be provided if payment is completed.")
+            raise ValidationError("Payment method required if paid.")
+        
+        if self.payment_status == "Pending" and self.payment_method:
+            raise ValidationError("Payment method should not be set before payment.")
 
-        # Appointment must belong to the same patient
         if self.appointment.patient != self.patient:
-            raise ValidationError("Appointment does not belong to this patient.")
+            raise ValidationError("Mismatch between appointment and patient.")
+
+        # ✅ NEW VALIDATIONS (IMPORTANT)
+
+        if self.lab_cost < 0 or self.pharmacy_cost < 0 or self.discount < 0:
+            raise ValidationError("Costs and discount cannot be negative.")
+
+        if self.discount > (self.consultation_fee + self.lab_cost + self.pharmacy_cost):
+            raise ValidationError("Discount cannot exceed total charges.")
+
+        if self.total_amount < 0:
+            raise ValidationError("Total amount cannot be negative.")
+
+    def save(self, *args, **kwargs):
+
+        # ✅ AUTO CALCULATE TOTAL (VERY IMPORTANT)
+        self.total_amount = (
+             Decimal(self.consultation_fee or 0) +
+             Decimal(self.lab_cost or 0) +
+             Decimal(self.pharmacy_cost or 0) -
+             Decimal(self.discount or 0)
+            )
+
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Bill {self.bill_id} - {self.patient}"
-    
+        return f"Bill {self.bill_id}"

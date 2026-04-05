@@ -50,7 +50,7 @@ class IsPharmacist(BasePermission):
         return (
             request.user and
             request.user.is_authenticated and
-            request.user.groups.filter(name="Pharmacist").exists()
+            request.user.groups.filter(name="pharmacist").exists()
         )
 
 
@@ -63,5 +63,5 @@ class IsReceptionist(BasePermission):
         return (
             request.user and
             request.user.is_authenticated and
-            request.user.groups.filter(name="Receptionist").exists()
+            request.user.groups.filter(name="receptionist").exists()
         )

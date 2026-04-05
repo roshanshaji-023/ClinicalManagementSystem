@@ -94,6 +94,7 @@ class Doctor(models.Model):
     experience_years = models.PositiveIntegerField()
     license_number = models.CharField(max_length=150,unique=True)
     consultation_fee = models.DecimalField(max_digits=10,decimal_places=2)
+    max_tokens_per_day = models.PositiveIntegerField(default=60)
     phone_number = models.CharField(max_length=15)
     status = models.CharField(
         max_length=20,
