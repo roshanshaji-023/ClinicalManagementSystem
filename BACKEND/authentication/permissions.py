@@ -1,6 +1,7 @@
 from rest_framework.permissions import BasePermission
 
 
+
 class IsAdmin(BasePermission):
     """
     Allows access only to Admin group users.
@@ -65,3 +66,6 @@ class IsReceptionist(BasePermission):
             request.user.is_authenticated and
             request.user.groups.filter(name="receptionist").exists()
         )
+    
+
+

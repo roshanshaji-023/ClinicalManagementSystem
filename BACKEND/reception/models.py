@@ -31,12 +31,12 @@ class Patient(models.Model):
     )
 
     first_name = models.CharField(max_length=50)
-    last_name = models.CharField(max_length=50)
+    last_name = models.CharField(max_length=50,blank=True, null=True)
 
     date_of_birth = models.DateField()
 
     gender = models.CharField(max_length=10)
-    blood_group = models.CharField(max_length=5)
+    blood_group = models.CharField(max_length=5, blank=True, null=True)
 
     email_id = models.EmailField(blank=True, null=True)
     address = models.TextField()
@@ -63,21 +63,22 @@ class Patient(models.Model):
         ordering = ['-created_date']
 
     def clean(self):
-        if self.date_of_birth > timezone.now().date():
-            raise ValidationError("Date of birth cannot be in the future.")
+     if self.date_of_birth > timezone.now().date():
+        raise ValidationError("Date of birth cannot be in the future.")
 
-        #  NEW: Name validation
-        if not self.first_name.isalpha():
-            raise ValidationError("First name must contain only letters")
+    # First name validation
+     if not self.first_name.isalpha():
+        raise ValidationError("First name must contain only letters")
 
+     if len(self.first_name) < 2:
+        raise ValidationError("First name must be at least 2 characters")
+
+    # ✅ FIXED last_name validation (optional field)
+     if self.last_name:  # ONLY validate if provided
         if not self.last_name.isalpha():
             raise ValidationError("Last name must contain only letters")
-        
-        if len(self.first_name) < 2:
-            raise ValidationError("First name must be at least 2 characters")
 
-        if len(self.last_name) < 2:
-            raise ValidationError("Last name must be at least 2 characters")
+        
 
     def save(self, *args, **kwargs):
         self.full_clean()

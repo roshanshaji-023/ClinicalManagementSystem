@@ -8,7 +8,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from django.http import HttpResponse
-
+from administration.models import Doctor
 from django.db.models import Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -18,6 +18,7 @@ from django.utils import timezone
 
 from .models import Appointment,Billing
 from authentication.permissions import IsReceptionist
+from .permissions import IsDoctorOrReceptionist
 
 
 from datetime import datetime, timedelta  
@@ -134,33 +135,45 @@ class DoctorAvailability(APIView):
         doctor_id = request.GET.get("doctor")
         date = request.GET.get("date")
 
+        # 🔴 Validate input
         if not doctor_id or not date:
             return Response({"error": "doctor and date required"})
 
-        doctor = get_object_or_404(Doctor, doctor_id=doctor_id)
+        # 🔴 Convert string → date safely
+        try:
+            date_obj = datetime.strptime(date, "%Y-%m-%d").date()
+        except:
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD"})
 
-        # Example working hours (can be dynamic later)
+        # 🔴 Get doctor
+        doctor = get_object_or_404(Doctor, doctor_id=doctor_id, status='active')
+
+        # 🟢 Fixed slots (can upgrade later)
         slots = [
             "09:00", "10:00", "11:00",
             "12:00", "14:00", "15:00", "16:00"
         ]
 
-        booked = Appointment.objects.filter(
+        # 🔵 Fetch booked slots correctly
+        booked_queryset = Appointment.objects.filter(
             doctor=doctor,
-            appointment_date=date
+            appointment_date=date_obj
         ).values_list('appointment_time', flat=True)
 
-        booked = [t.strftime("%H:%M") for t in booked]
+        booked = [t.strftime("%H:%M") for t in booked_queryset]
 
+        # 🟢 Available slots
         available = [slot for slot in slots if slot not in booked]
 
         return Response({
-            "doctor": doctor.user.first_name,
-            "date": date,
+            "doctor": f"{doctor.user.first_name} {doctor.user.last_name}",
+            "date": str(date_obj),
             "available_slots": available,
             "booked_slots": booked
         })
     
+
+
 class PatientProfile(APIView):
     permission_classes = [IsReceptionist]
 
@@ -168,16 +181,32 @@ class PatientProfile(APIView):
 
         patient = get_object_or_404(Patient, patient_id=patient_id)
 
-        appointments = Appointment.objects.filter(patient=patient)
+        appointments = Appointment.objects.filter(
+            patient=patient
+        ).select_related('doctor')
 
         return Response({
             "patient_id": patient.patient_id,
-            "name": patient.first_name,
+            "first_name": patient.first_name,
+            "last_name": patient.last_name,
             "phone": patient.phone_number,
+            "gender": patient.gender,
+            "date_of_birth": patient.date_of_birth,
+            "blood_group": patient.blood_group,
+            "address": patient.address,
             "is_active": patient.is_active,
-            "appointments_count": appointments.count()
-        })
 
+            "appointments": [
+                {
+                    "appointment_id": a.appointment_id,
+                    "doctor_name": f"{a.doctor.user.first_name} {a.doctor.user.last_name}",
+                    "date": a.appointment_date,
+                    "time": a.appointment_time,
+                    "status": a.status,
+                }
+                for a in appointments
+            ]
+        })
 # -------------------- APPOINTMENT --------------------
 
 class CreateAppointment(APIView):
@@ -464,14 +493,45 @@ class WalkIn(APIView):
 
 # -------------------- DOCTOR --------------------
 
+
+from .permissions import IsDoctorOrReceptionist  # new permission
+
 class DoctorQueue(APIView):
-    permission_classes = [IsDoctor]
+    permission_classes = [IsDoctorOrReceptionist]
 
     def get(self, request):
-        appointments = Appointment.objects.filter(
-            appointment_date=timezone.localdate(),
-            status='Waiting'
-        ).select_related('patient', 'doctor').prefetch_related('tokens')
+        user = request.user
+
+        # ✅ DEBUG (optional)
+        print(user, getattr(user, "staff", None))
+
+        # ❌ If no staff → unauthorized
+        if not hasattr(user, "staff") or not user.staff:
+            return Response({"error": "No staff profile"}, status=403)
+
+        role = user.staff.role   # ✅ CORRECT ROLE SOURCE
+
+        # 🔵 Doctor → only their queue
+        if role == "Doctor":
+            appointments = Appointment.objects.filter(
+                appointment_date=timezone.localdate(),
+                status='Waiting',
+                doctor__user=user
+            )
+
+        # 🟢 Receptionist → all queues
+        elif role == "Receptionist":
+            appointments = Appointment.objects.filter(
+                appointment_date=timezone.localdate(),
+                status='Waiting'
+            )
+
+        else:
+            return Response({"error": "Unauthorized"}, status=403)
+
+        appointments = appointments.select_related(
+            'patient', 'doctor'
+        ).prefetch_related('tokens')
 
         data = []
 
@@ -480,7 +540,7 @@ class DoctorQueue(APIView):
 
             data.append({
                 "appointment_id": appt.appointment_id,
-                "patient_name": appt.patient.first_name,
+                "patient_name": f"{appt.patient.first_name} {appt.patient.last_name or ''}",
                 "doctor_name": f"{appt.doctor.user.first_name} {appt.doctor.user.last_name}",
                 "token_number": token.token_number if token else None,
                 "appointment_time": appt.appointment_time,
@@ -488,11 +548,13 @@ class DoctorQueue(APIView):
                 "is_emergency": appt.is_emergency,
             })
 
-        # Sort by token 
-        data = sorted(data, key=lambda x: x["token_number"] or 999)
+        # ✅ Better sorting (emergency first)
+        data = sorted(
+            data,
+            key=lambda x: (not x["is_emergency"], x["token_number"] or 999)
+        )
 
         return Response(data)
-
 
 class MarkNoShow(APIView):
     permission_classes = [IsReceptionist]

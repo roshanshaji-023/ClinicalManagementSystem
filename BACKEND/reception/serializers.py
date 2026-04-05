@@ -33,10 +33,9 @@ class PatientSerializer(serializers.ModelSerializer):
         return value
 
     def validate_last_name(self, value):
-        if not value.isalpha():
+        if value and not value.isalpha():
             raise serializers.ValidationError("Last name must contain only letters")
-        if len(value) < 2:
-            raise serializers.ValidationError("Last name must be at least 2 characters")
+
         return value
 
     def validate_date_of_birth(self, value):

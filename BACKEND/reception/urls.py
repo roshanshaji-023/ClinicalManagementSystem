@@ -35,6 +35,7 @@ urlpatterns = [
     path('patients/<int:patient_id>/delete/', DeletePatient.as_view()),
     path('doctor/availability/', DoctorAvailability.as_view()),
     path('patients/<int:patient_id>/', PatientProfile.as_view()),
+    
 
 
     # -------------------- APPOINTMENT --------------------
