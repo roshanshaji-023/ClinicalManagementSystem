@@ -2,8 +2,25 @@ from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from decimal import Decimal
+from datetime import datetime,time
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from django.http import HttpResponse
 
-from datetime import datetime, timedelta  # ✅ add timedelta
+from django.db.models import Sum, Value
+from django.db.models.functions import Coalesce
+from django.utils import timezone
+
+
+
+
+from .models import Appointment,Billing
+from authentication.permissions import IsReceptionist
+
+
+from datetime import datetime, timedelta  
 from django.utils import timezone
 
 from authentication.permissions import (
@@ -61,6 +78,106 @@ class SearchPatient(APIView):
         return Response(serializer.data)
 
 
+class UpdatePatient(APIView):
+    permission_classes = [IsReceptionist]
+
+    def put(self, request, patient_id):
+
+        patient = get_object_or_404(Patient, patient_id=patient_id)
+
+        # Only allow updating specific fields
+        allowed_fields = ['phone_number', 'address']
+
+        data = {
+            key: value for key, value in request.data.items()
+            if key in allowed_fields
+        }
+
+        if not data:
+            return Response({"error": "No valid fields provided"})
+
+        serializer = PatientSerializer(patient, data=data, partial=True)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "Patient updated successfully"})
+
+        return Response(serializer.errors)
+
+class DeletePatient(APIView):
+    permission_classes = [IsReceptionist]
+
+    def post(self, request, patient_id):
+
+        patient = get_object_or_404(Patient, patient_id=patient_id)
+
+        #  Prevent deletion if active appointments exist
+        active_appointments = Appointment.objects.filter(
+            patient=patient,
+            status__in=["Scheduled", "Waiting", "In Consultation"]
+        )
+
+        if active_appointments.exists():
+            return Response({"error": "Cannot delete patient with active appointments"})
+
+        patient.is_active = False
+        patient.save()
+
+        return Response({"message": "Patient deactivated successfully"})
+    
+
+class DoctorAvailability(APIView):
+    permission_classes = [IsReceptionist]
+
+    def get(self, request):
+
+        doctor_id = request.GET.get("doctor")
+        date = request.GET.get("date")
+
+        if not doctor_id or not date:
+            return Response({"error": "doctor and date required"})
+
+        doctor = get_object_or_404(Doctor, doctor_id=doctor_id)
+
+        # Example working hours (can be dynamic later)
+        slots = [
+            "09:00", "10:00", "11:00",
+            "12:00", "14:00", "15:00", "16:00"
+        ]
+
+        booked = Appointment.objects.filter(
+            doctor=doctor,
+            appointment_date=date
+        ).values_list('appointment_time', flat=True)
+
+        booked = [t.strftime("%H:%M") for t in booked]
+
+        available = [slot for slot in slots if slot not in booked]
+
+        return Response({
+            "doctor": doctor.user.first_name,
+            "date": date,
+            "available_slots": available,
+            "booked_slots": booked
+        })
+    
+class PatientProfile(APIView):
+    permission_classes = [IsReceptionist]
+
+    def get(self, request, patient_id):
+
+        patient = get_object_or_404(Patient, patient_id=patient_id)
+
+        appointments = Appointment.objects.filter(patient=patient)
+
+        return Response({
+            "patient_id": patient.patient_id,
+            "name": patient.first_name,
+            "phone": patient.phone_number,
+            "is_active": patient.is_active,
+            "appointments_count": appointments.count()
+        })
+
 # -------------------- APPOINTMENT --------------------
 
 class CreateAppointment(APIView):
@@ -87,6 +204,29 @@ class CreateAppointment(APIView):
 
         return Response(serializer.errors)
 
+class SearchAppointments(APIView):
+    permission_classes = [IsReceptionist]
+
+    def get(self, request):
+
+        doctor = request.GET.get("doctor")
+        status = request.GET.get("status")
+        date = request.GET.get("date")
+
+        appointments = Appointment.objects.all()
+
+        if doctor:
+            appointments = appointments.filter(doctor__doctor_id=doctor)
+
+        if status:
+            appointments = appointments.filter(status=status)
+
+        if date:
+            appointments = appointments.filter(appointment_date=date)
+
+        serializer = AppointmentSerializer(appointments, many=True)
+        return Response(serializer.data)
+
 
 class AppointmentByDate(APIView):
     permission_classes = [IsReceptionist]
@@ -100,6 +240,51 @@ class AppointmentByDate(APIView):
 
         serializer = AppointmentSerializer(appointments, many=True)
         return Response(serializer.data)
+    
+
+
+class RescheduleAppointment(APIView):
+    permission_classes = [IsReceptionist]
+
+    def post(self, request):
+
+        appointment = get_object_or_404(
+            Appointment,
+            appointment_id=request.data.get("appointment")
+        )
+
+        #  Cannot reschedule completed
+        if appointment.status in ["Completed", "In Consultation"]:
+            return Response({"error": "Cannot reschedule this appointment"})
+
+        try:
+            new_date = datetime.strptime(
+                request.data.get("appointment_date"), "%Y-%m-%d"
+            ).date()
+
+            new_time = datetime.strptime(
+                request.data.get("appointment_time"), "%H:%M"
+            ).time()
+        except:
+            return Response({"error": "Invalid date/time format"})
+
+        #  Prevent double booking
+        exists = Appointment.objects.filter(
+            doctor=appointment.doctor,
+            appointment_date=new_date,
+            appointment_time=new_time
+        ).exclude(pk=appointment.pk)
+
+        if exists.exists():
+            return Response({"error": "Slot already booked"})
+
+        #  Update
+        appointment.appointment_date = new_date
+        appointment.appointment_time = new_time
+        appointment.status = "Scheduled"
+        appointment.save()
+
+        return Response({"message": "Appointment rescheduled"})
 
 
 class CancelAppointment(APIView):
@@ -114,11 +299,105 @@ class CancelAppointment(APIView):
         if appointment.status == "Completed":
             return Response({"error": "Cannot cancel completed appointment"})
 
+        #  ADDED THIS BLOCK
+        reason = request.data.get("reason")
+        if not reason:
+            return Response({"error": "Cancellation reason required"})
+
+        #  THEN SET VALUES
         appointment.status = "Cancelled"
-        appointment.cancellation_reason = request.data.get("reason")
+        appointment.cancellation_reason = reason
         appointment.save()
 
         return Response({"message": "Appointment cancelled"})
+    
+
+
+
+
+
+#-----------------FOLLOW-UP-----------------
+
+class CreateFollowUp(APIView):
+    permission_classes = [IsReceptionist]
+
+    def post(self, request):
+
+        parent = get_object_or_404(
+            Appointment,
+            appointment_id=request.data.get("parent_appointment")
+        )
+
+        #  Must be completed
+        if parent.status != "Completed":
+            return Response({"error": "Follow-up allowed only after completion"})
+
+        # Prevent duplicate follow-up
+        if parent.follow_ups.exists():
+            return Response({"error": "Follow-up already exists"})
+
+        # Parse date/time
+        try:
+            appointment_date = datetime.strptime(
+                request.data.get("appointment_date"), "%Y-%m-%d"
+            ).date()
+
+            appointment_time = datetime.strptime(
+                request.data.get("appointment_time"), "%H:%M"
+            ).time()
+        except:
+            return Response({"error": "Invalid date/time format"})
+
+        # No past booking
+        if appointment_date < timezone.localdate():
+            return Response({"error": "Cannot book in past"})
+
+        # Optional: 30-day rule
+        if (appointment_date - parent.appointment_date).days > 30:
+            return Response({"error": "Follow-up should be within 30 days"})
+
+        appointment = Appointment.objects.create(
+            patient=parent.patient,
+            doctor=parent.doctor,
+            appointment_date=appointment_date,
+            appointment_time=appointment_time,
+            visit_type="Follow-Up",
+            parent_appointment=parent,
+            status="Scheduled",
+            created_by=request.user,
+            staff=getattr(request.user, 'staff', None)
+        )
+
+        return Response({
+            "appointment_id": appointment.appointment_id,
+            "linked_to": parent.appointment_id,
+            "status": appointment.status
+        })
+    
+#----------------Appointment Detail-----------------
+
+class AppointmentDetail(APIView):
+    permission_classes = [IsReceptionist]
+
+    def get(self, request, appointment_id):
+        appointment = get_object_or_404(Appointment, appointment_id=appointment_id)
+        serializer = AppointmentSerializer(appointment)
+        return Response(serializer.data)
+    
+
+
+class PatientAppointments(APIView):
+    permission_classes = [IsReceptionist]
+
+    def get(self, request, patient_id):
+
+        appointments = Appointment.objects.filter(
+            patient__patient_id=patient_id
+        ).select_related('doctor', 'patient').prefetch_related('follow_ups').order_by('-appointment_date')
+
+        serializer = AppointmentSerializer(appointments, many=True)
+
+        return Response(serializer.data)
 
 
 # -------------------- WALK-IN --------------------
@@ -149,7 +428,7 @@ class WalkIn(APIView):
                 "blood_group": data.get("blood_group"),
                 "address": data.get("address"),
                 "created_by": request.user,
-                "staff": getattr(request.user, 'staff', None)  # ✅ FIX
+                "staff": getattr(request.user, 'staff', None)  
             }
         )
 
@@ -159,17 +438,19 @@ class WalkIn(APIView):
             status='active'
         )
 
-        # ✅ FIX: avoid "time in past" error + add staff
+        #  FIX: avoid "time in past" error + clean time format
+        raw_time = timezone.localtime() + timedelta(minutes=5)
+
         appointment = Appointment.objects.create(
             patient=patient,
             doctor=doctor,
             appointment_date=timezone.localdate(),
-            appointment_time=(timezone.localtime() + timedelta(minutes=5)).time(),
+            appointment_time=raw_time.replace(second=0, microsecond=0).time(),  
             visit_type="New",
             status="Waiting",
             created_by=request.user,
-            staff=getattr(request.user, 'staff', None)  # ✅ FIX
-        )
+            staff=getattr(request.user, 'staff', None)
+)
 
         # Token auto-created via signal
         token = WaitingToken.objects.filter(appointment=appointment).first()
@@ -207,7 +488,7 @@ class DoctorQueue(APIView):
                 "is_emergency": appt.is_emergency,
             })
 
-        # Sort by token (real system behavior)
+        # Sort by token 
         data = sorted(data, key=lambda x: x["token_number"] or 999)
 
         return Response(data)
@@ -244,13 +525,13 @@ class CompleteConsultation(APIView):
 
         if not note:
             # return Response({"error": "Consultation note is required"})
-            # ✅ Default fallback (production-safe)
+            #  Default fallback 
           note = "Consultation completed without notes"
 
         appointment.status = "Completed"
         appointment.save()
 
-        # ✅ Create history with real doctor input
+        #  Create history with real doctor input
         PatientHistory.objects.create(
             patient=appointment.patient,
             appointment=appointment,
@@ -293,29 +574,29 @@ class CreateBill(APIView):
             appointment_id=request.data.get("appointment")
         )
 
-        # ✅ Prevent duplicate bill
-        if hasattr(appointment, 'bill'):
+        #  Prevent duplicate bill
+        if Billing.objects.filter(appointment=appointment).exists():
             return Response({"error": "Bill already exists"})
 
-        # ✅ Only after consultation
+        #  Only after consultation
         if appointment.status != "Completed":
             return Response({"error": "Consultation not completed"})
 
         consultation_fee = appointment.doctor.consultation_fee
 
-        # ✅ Lab cost (auto)
+        #  Lab cost (auto)
         lab_bill = getattr(appointment, 'lab_bill', None)
         lab_cost = lab_bill.total_amount if lab_bill else Decimal('0')
 
-        # ✅ Pharmacy + Discount
+        # Pharmacy + Discount
         pharmacy_cost = Decimal(request.data.get("pharmacy_cost", 0))
         discount = Decimal(request.data.get("discount", 0))
 
-        # ❌ Basic validation
+        #  Basic validation
         if pharmacy_cost < 0 or discount < 0:
             return Response({"error": "Invalid cost values"})
 
-        # ❌ Prevent over-discount (IMPORTANT)
+        #  Prevent over-discount (IMPORTANT)
         total_before_discount = consultation_fee + lab_cost + pharmacy_cost
         if discount > total_before_discount:
             return Response({"error": "Discount exceeds total amount"})
@@ -330,7 +611,7 @@ class CreateBill(APIView):
             staff=getattr(request.user, 'staff', None)
         )
 
-        # ✅ Clean response (production style)
+        #  Clean response 
         return Response({
             "bill_id": bill.bill_id,
             "consultation_fee": bill.consultation_fee,
@@ -362,30 +643,210 @@ class PayBill(APIView):
             bill_id=request.data.get("bill_id")
         )
 
-        # ✅ Prevent double payment
+        #  Prevent double payment
         if bill.payment_status == "Paid":
             return Response({"error": "Bill already paid"})
 
         payment_method = request.data.get("payment_method")
 
-        # ✅ Validate payment method presence
+        #  Validate payment method presence
         if not payment_method:
             return Response({"error": "Payment method required"})
 
-        # ✅ Validate allowed methods
+        #  Validate allowed methods
         valid_methods = ["Cash", "Card", "UPI"]
         if payment_method not in valid_methods:
             return Response({"error": "Invalid payment method"})
 
-        # ✅ Update bill
+        #  Update bill
         bill.payment_status = "Paid"
         bill.payment_method = payment_method
         bill.paid_at = timezone.now()
         bill.save()
 
-        # ✅ Clean response (professional)
+        #  Clean response (professional)
         return Response({
             "bill_id": bill.bill_id,
             "payment_status": bill.payment_status,
             "payment_method": bill.payment_method
+        })
+#----------------bill generation-----------------
+
+
+
+
+
+
+class GenerateBillPDF(APIView):
+    permission_classes = [IsReceptionist]
+
+    def get(self, request, bill_id):
+
+        bill = get_object_or_404(Billing, bill_id=bill_id)
+
+        #  Dynamic data
+        patient = bill.patient
+        appointment = bill.appointment
+        doctor = appointment.doctor
+        staff = bill.staff
+
+        doctor_name = f"{doctor.user.first_name} {doctor.user.last_name}"
+        patient_name = f"{patient.first_name} {patient.last_name}"
+
+        #  Response setup
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="bill_{bill.bill_id}.pdf"'
+
+        doc = SimpleDocTemplate(response, pagesize=A4)
+        elements = []
+        styles = getSampleStyleSheet()
+
+        # ---------------- HEADER ----------------
+        elements.append(Paragraph("<b>Clinic Management System</b>", styles['Title']))
+        elements.append(Paragraph("Consultation & Medical Services", styles['Normal']))
+        elements.append(Spacer(1, 10))
+
+        # ---------------- PATIENT DETAILS ----------------
+        patient_data = [
+            ["Name", patient_name, "Patient ID", patient.patient_code],
+            ["Age", str(patient.age), "Bill No", str(bill.bill_id)],
+            ["Doctor", doctor_name, "Visit Type", appointment.visit_type],
+            ["Date", bill.created_at.strftime("%d-%m-%Y %I:%M %p"), "Payment", bill.payment_method or "Pending"],
+            ["Status", bill.payment_status, "Generated By", str(staff) if staff else "System"]
+        ]
+
+        patient_table = Table(patient_data, colWidths=[80, 150, 80, 150])
+        patient_table.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+        ]))
+
+        elements.append(patient_table)
+        elements.append(Spacer(1, 15))
+
+        # ---------------- BILL ITEMS ----------------
+        data = [
+            ["Sl", "Item", "Rate", "Qty", "Amount"]
+        ]
+
+        row = 1
+
+        # Consultation
+        data.append([
+            row, "Consultation Fee",
+            str(bill.consultation_fee), 1,
+            str(bill.consultation_fee)
+        ])
+        row += 1
+
+        # Lab
+        if bill.lab_cost > 0:
+            data.append([
+                row, "Lab Charges",
+                str(bill.lab_cost), 1,
+                str(bill.lab_cost)
+            ])
+            row += 1
+
+        # Pharmacy
+        if bill.pharmacy_cost > 0:
+            data.append([
+                row, "Pharmacy Charges",
+                str(bill.pharmacy_cost), 1,
+                str(bill.pharmacy_cost)
+            ])
+            row += 1
+
+        table = Table(data, colWidths=[40, 200, 70, 50, 80])
+        table.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
+        ]))
+
+        elements.append(table)
+        elements.append(Spacer(1, 10))
+
+        # ---------------- TOTAL ----------------
+        total_before = (
+            Decimal(bill.consultation_fee) +
+            Decimal(bill.lab_cost) +
+            Decimal(bill.pharmacy_cost)
+        )
+
+        elements.append(Paragraph(
+            f"Amount: ₹{total_before}    Discount: ₹{bill.discount}",
+            styles['Normal']
+        ))
+
+        elements.append(Paragraph(
+            f"<b>Total Payable: ₹{bill.total_amount}</b>",
+            styles['Normal']
+        ))
+
+        elements.append(Spacer(1, 30))
+
+        # ---------------- SIGNATURE ----------------
+        elements.append(Paragraph("Authorized Signature", styles['Normal']))
+
+        doc.build(elements)
+
+        return response
+    
+
+
+
+
+
+class ReceptionDashboard(APIView):
+    permission_classes = [IsReceptionist]
+
+    def get(self, request):
+
+        #  Current date
+        today = timezone.localdate()
+
+        # ---------------- APPOINTMENT STATS ----------------
+        total = Appointment.objects.filter(
+            appointment_date=today
+        ).count()
+
+        completed = Appointment.objects.filter(
+            appointment_date=today,
+            status="Completed"
+        ).count()
+
+        pending = Appointment.objects.filter(
+            appointment_date=today,
+            status="Scheduled"
+        ).count()
+
+        # ---------------- REVENUE CALCULATION ----------------
+        #  Use datetime range (real-world safe)
+        start = datetime.combine(today, time.min)
+        end = datetime.combine(today, time.max)
+
+        #  Revenue = only PAID bills
+        revenue = Billing.objects.filter(
+            paid_at__range=(start, end),
+            payment_status__iexact="Paid"
+        ).aggregate(
+            total=Coalesce(Sum('total_amount'), Value(Decimal('0.00')))
+        )['total']
+
+        # ---------------- OPTIONAL (ADVANCED FEATURE) ----------------
+        # Total generated bills (even unpaid)
+        generated = Billing.objects.filter(
+            created_at__date=today
+        ).aggregate(
+            total=Coalesce(Sum('total_amount'), Value(Decimal('0.00')))
+        )['total']
+
+        # ---------------- RESPONSE ----------------
+        return Response({
+            "date": today,
+            "total_appointments": total,
+            "completed": completed,
+            "pending": pending,
+            "revenue_collected": revenue,   #  actual money received
+            "revenue_generated": generated  #  total bills generated
         })

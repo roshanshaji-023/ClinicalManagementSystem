@@ -89,7 +89,7 @@ class Patient(models.Model):
         else:
             super().save(*args, **kwargs)
 
-    #  NEW: Age property (for realism)
+    #  NEW: Age property 
     @property
     def age(self):
         today = timezone.now().date()
@@ -163,10 +163,11 @@ class Appointment(models.Model):
         if self.appointment_date and self.appointment_date < timezone.localdate():
             raise ValidationError("Appointment date cannot be in the past.")
 
-        #  NEW: Time validation
-        if self.appointment_date == timezone.localdate():
-            if self.appointment_time < timezone.localtime().time():
-                raise ValidationError("Appointment time cannot be in the past")
+        # Apply time validation ONLY during creation
+        if not self.pk:
+            if self.appointment_date == timezone.localdate():
+                if self.appointment_time < timezone.localtime().time():
+                    raise ValidationError("Appointment time cannot be in the past")
 
         if self.visit_type == 'Follow-Up' and not self.parent_appointment:
             raise ValidationError("Follow-Up appointment must have a parent appointment.")
@@ -224,7 +225,7 @@ class WaitingToken(models.Model):
 
     def save(self, *args, **kwargs):
 
-        self.full_clean()  # ✅ IMPORTANT
+        self.full_clean()  #  IMPORTANT
 
         self.doctor = self.appointment.doctor
 
@@ -233,7 +234,7 @@ class WaitingToken(models.Model):
             token_date=self.token_date
         ).count()
 
-        # ✅ FIXED: dynamic token limit
+        #  FIXED: dynamic token limit
         if today_token_count >= self.doctor.max_tokens_per_day:
             raise ValidationError("Maximum token limit reached for this doctor today.")
 
@@ -314,7 +315,7 @@ class Billing(models.Model):
 
     consultation_fee = models.DecimalField(max_digits=10, decimal_places=2)
 
-    # ✅ NEW FIELDS (ONLY ADD THESE)
+    # NEW FIELDS 
     lab_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     pharmacy_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -341,7 +342,7 @@ class Billing(models.Model):
 
     def clean(self):
 
-        # ✅ Existing validations (keep)
+        #  Existing validations (keep)
         if self.consultation_fee <= 0:
             raise ValidationError("Consultation fee must be greater than zero.")
 
@@ -354,7 +355,7 @@ class Billing(models.Model):
         if self.appointment.patient != self.patient:
             raise ValidationError("Mismatch between appointment and patient.")
 
-        # ✅ NEW VALIDATIONS (IMPORTANT)
+        # NEW VALIDATIONS (IMPORTANT)
 
         if self.lab_cost < 0 or self.pharmacy_cost < 0 or self.discount < 0:
             raise ValidationError("Costs and discount cannot be negative.")
@@ -367,7 +368,7 @@ class Billing(models.Model):
 
     def save(self, *args, **kwargs):
 
-        # ✅ AUTO CALCULATE TOTAL (VERY IMPORTANT)
+        #  AUTO CALCULATE TOTAL 
         self.total_amount = (
              Decimal(self.consultation_fee or 0) +
              Decimal(self.lab_cost or 0) +
